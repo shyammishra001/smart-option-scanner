@@ -498,7 +498,7 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
     side = "ce" if direction == "BULL" else "pe"
     option_type = "CE" if direction == "BULL" else "PE"
 
-    # ATM ke aas paas ke 4 ITM aur 4 OTM check karega
+    # ATM se shuru karke aas-paas ke strikes check karega
     candidates = []
     for i in range(-4, 5):
         idx = atm_index + i
@@ -510,7 +510,6 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
     
     fail_reasons = []
     
-    # MAX LOSS FIX: Capital ka 30%
     max_allowed_loss = capital * 0.30
 
     for strike in candidates:
@@ -535,10 +534,10 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
 
         greeks = leg.get("greeks") or {}
         delta = abs(_f(greeks.get("delta"), 0))
-        if delta <= 0: delta = 0.5  # fallback
+        if delta <= 0: delta = 0.5
 
-        # 🔴 DELTA FILTER: 0.30 se kam delta (deep OTM) allowed nahi hai
-        if delta < 0.20:
+        # Delta Filter: 0.30 se kam delta (deep OTM) reject karega
+        if delta < 0.30:
             fail_reasons.append(f"Strike {strike:g} Delta ({delta:.2f}) < 0.30")
             continue
 
