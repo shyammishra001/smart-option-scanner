@@ -59,7 +59,6 @@ class INDmoneyClient:
 
     def _headers(self) -> Dict[str, str]:
         token = self.token.strip()
-        # Double-Bearer bug fix
         token = re.sub(r"^[Bb][Ee][Aa][Rr][Ee][Rr]\s+", "", token).strip()
         if self._bearer:
             token = f"Bearer {token}"
@@ -209,9 +208,19 @@ class INDmoneyClient:
 
     @staticmethod
     def _candles_to_df(candles: Any) -> pd.DataFrame:
-        if not candles:
+        # SAFE CHECK: Prevent DataFrame truth value error
+        if candles is None:
             return pd.DataFrame()
-        df = pd.DataFrame(candles)
+            
+        if isinstance(candles, pd.DataFrame):
+            if candles.empty:
+                return pd.DataFrame()
+            df = candles.copy()
+        else:
+            if not candles:
+                return pd.DataFrame()
+            df = pd.DataFrame(candles)
+
         df.columns = [str(c).lower().strip() for c in df.columns]
         rename = {
             "timestamp": "ts", "open": "o", "high": "h",
