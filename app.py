@@ -390,12 +390,7 @@ def render_main() -> None:
             
         st.divider()
         
-        st.header("📱 Telegram Settings")
-        st.info("Streamlit Secrets me `TELEGRAM_BOT_TOKEN` aur `TELEGRAM_CHAT_ID` save karein. Wo yaha automatically load ho jayenge.")
-        
-        st.text_input("Bot Token", type="password", key="tg_token")
-        st.text_input("Chat ID", key="tg_chat")
-
+        st.caption("Developer Name - Shyam Mishra")
         st.divider()
         st.caption("⚠️ Educational scanner only. Trading me risk hai.")
 
