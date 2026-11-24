@@ -164,10 +164,11 @@ def _vcp_score(daily: pd.DataFrame, direction: str) -> Tuple[int, List[str]]:
         return 0, []
 
     recent = daily.tail(20).reset_index(drop=True)
-    parts = np.array_split(recent, 4)
     ranges: List[float] = []
 
-    for part in parts:
+    # ERR FIX: np.array_split की जगह .iloc स्लाइसिंग यूज़ की है ताकि Numpy Index Error ना आये
+    for i in range(4):
+        part = recent.iloc[i * 5 : (i + 1) * 5]
         if len(part) < 2:
             continue
         mean_close = _f(part["c"].mean(), 0)
