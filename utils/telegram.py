@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
-
 import requests
 
 
 def send_message(bot_token: str, chat_id: str, text: str, timeout: int = 10) -> Tuple[bool, str]:
-    """Telegram pe ek message bhejta hai. Fail ho to exception nahi, False return karta hai."""
     if not bot_token or not chat_id:
         return False, "Telegram token ya chat ID nahi hai"
 
@@ -32,7 +30,7 @@ def send_message(bot_token: str, chat_id: str, text: str, timeout: int = 10) -> 
         return False, "Telegram nahi gaya, Token check karo"
 
 
-def _format_signal(signal: Dict[str, Any]) -> str:
+def _format_signal(signal: Dict[str, Any], user_name: str) -> str:
     return (
         f"🔥 <b>NEW SIGNAL - {signal.get('option_symbol', '')}</b>\n"
         f"Expiry: {signal.get('expiry', '')}\n"
@@ -42,8 +40,9 @@ def _format_signal(signal: Dict[str, Any]) -> str:
         f"TGT2: {signal.get('target2', 0):g}\n"
         f"Capital Need: ₹{signal.get('total_cost', 0):,.0f} | "
         f"Score: {signal.get('score', 0)}/100\n"
-        f"Stock: {signal.get('stock_name', '')} ({signal.get('stock_code', '')})\n"
-        f"Reason: {signal.get('reason', '')}"
+        f"Stock: {signal.get('stock_name', '')}\n"
+        f"Reason: {signal.get('reason', '')}\n\n"
+        f"👤 <i>{user_name}</i>"
     )
 
 
@@ -51,8 +50,8 @@ def send_signal_messages(
     bot_token: str,
     chat_id: str,
     signals: List[Dict[str, Any]],
+    user_name: str = "INDmoney User",
 ) -> Tuple[bool, str]:
-    """Top signals Telegram pe bhejta hai. Ek bhi fail ho to warning message."""
     if not signals:
         return True, ""
 
@@ -62,7 +61,7 @@ def send_signal_messages(
     all_ok = True
 
     for signal in signals:
-        ok, _ = send_message(bot_token, chat_id, _format_signal(signal))
+        ok, _ = send_message(bot_token, chat_id, _format_signal(signal, user_name))
         if not ok:
             all_ok = False
 
