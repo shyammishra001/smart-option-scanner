@@ -199,21 +199,23 @@ def render_login() -> None:
                 st.error(f"Market data load fail: {exc}")
                 return
                 
-            # API Token se User ka Naam nikalna (Fallback logic improved)
+            # API Token se User ka Naam nikalna (first_name + last_name)
             user_name = "INDmoney User"
             try:
-                profile = client.test_token()
-                if isinstance(profile, dict):
-                    # Check all possible keys for name
-                    name_val = (
-                        profile.get("name") 
-                        or profile.get("full_name")
-                        or profile.get("display_name") 
-                        or profile.get("user_name") 
-                        or profile.get("client_id") 
-                    )
-                    if name_val:
-                        user_name = str(name_val)
+                profile_data = client.test_token()
+                if isinstance(profile_data, dict):
+                    first = str(profile_data.get("first_name", "")).strip()
+                    last = str(profile_data.get("last_name", "")).strip()
+                    
+                    if first or last:
+                        user_name = f"{first} {last}".strip()
+                    else:
+                        user_name = (
+                            profile_data.get("name") 
+                            or profile_data.get("display_name") 
+                            or profile_data.get("user_id")
+                            or "INDmoney User"
+                        )
             except Exception:
                 pass
 
@@ -315,7 +317,7 @@ def render_results() -> None:
         if st.button("📤 Send Top 5 to Telegram again"):
             tg_token = st.session_state.get("tg_token", "").strip()
             tg_chat = st.session_state.get("tg_chat", "").strip()
-            user_name = st.session_state.get("user_id", "INDmoney User")
+            user_name = st.session_state.get("user_name", "INDmoney User")
             
             if not tg_token or not tg_chat:
                 st.error("Pehle Streamlit Secrets me Telegram Token aur Chat ID set karo!")
@@ -394,7 +396,7 @@ def render_search(master: Dict[str, Any]) -> None:
 def render_main() -> None:
     client: Optional[INDmoneyClient] = st.session_state.get("client")
     master: Optional[Dict[str, Any]] = st.session_state.get("master")
-    user_name = st.session_state.get("user_id", "INDmoney User")
+    user_name = st.session_state.get("user_name", "INDmoney User")
 
     if client is None or master is None:
         st.session_state["connected"] = False
