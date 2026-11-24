@@ -15,9 +15,7 @@ from utils.indmoney import (
     search_stocks,
 )
 from utils.strategy import run_scan
-
-# Telegram DISABLED per user request (टेलीग्राम का कोड डिलीट नहीं किया है, सिर्फ बंद कर दिया है)
-# from utils.telegram import send_signal_messages
+from utils.telegram import send_signal_messages  # Telegram Import वापस ऑन कर दिया
 
 API_BASE = "https://api.indstocks.com"
 
@@ -50,6 +48,7 @@ def init_state() -> None:
         "connected": False, "client": None, "master": None,
         "scan_result": None, "scan_time": None, "connected_at": None,
         "search_box": "", "login_token_input": "",
+        "tg_token": "", "tg_chat": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -63,10 +62,9 @@ def reset_connection() -> None:
 
 
 # ----------------------------------------------------------------------
-# TOKEN HELPERS (BUG 2 Fix: Double Bearer & Fake Errors)
+# TOKEN HELPERS
 # ----------------------------------------------------------------------
 def clean_token(raw: str) -> str:
-    """स्पेस हटाता है और डबल Bearer बग को फिक्स करता है"""
     token = (raw or "").strip()
     token = re.sub(r"^[Bb][Ee][Aa][Rr][Ee][Rr]\s+", "", token).strip()
     return token
@@ -92,7 +90,6 @@ def _extract_reliance_ltp(payload: Any) -> float:
 
 
 def test_token_direct(token: str) -> Tuple[bool, str]:
-    """सीधा INDmoney API से टेस्ट करता है और असली एरर दिखाता है"""
     if not token:
         return False, "Token khali hai"
 
@@ -119,7 +116,6 @@ def test_token_direct(token: str) -> Tuple[bool, str]:
             suffix = f" — RELIANCE LTP = ₹{ltp}" if ltp else ""
             return True, f"Token sahi hai ({label} auth){suffix}"
 
-        # API का असली मैसेज निकालो
         api_msg = ""
         try:
             err = r.json()
@@ -143,7 +139,7 @@ def load_master(client: INDmoneyClient) -> Dict[str, Any]:
 
 
 # ----------------------------------------------------------------------
-# LOGIN (BUG 3 Fix: सिर्फ 1 बॉक्स मांगेगा)
+# LOGIN
 # ----------------------------------------------------------------------
 def render_login() -> None:
     st.markdown('<p class="main-title">🔐 Smart Option Scanner</p>', unsafe_allow_html=True)
@@ -163,7 +159,6 @@ def render_login() -> None:
         type="password",
         key="login_token_input",
         placeholder="eyJhbGciOi... ya Bearer eyJhbGciOi...",
-        help="'Bearer ' prefix ho to bhi chalega — auto strip ho jayega.",
     )
 
     col1, col2 = st.columns(2)
@@ -181,7 +176,6 @@ def render_login() -> None:
     raw_token = st.session_state.get("login_token_input", "")
     token = clean_token(raw_token)
 
-    # --- TEST BUTTON ---
     if test_clicked:
         if not token:
             st.error("Token daalo pehle.")
@@ -193,7 +187,6 @@ def render_login() -> None:
             else:
                 st.error(message)
 
-    # --- CONNECT BUTTON ---
     if connect_clicked:
         if not token:
             st.error("Token daalo pehle.")
@@ -222,12 +215,6 @@ def render_login() -> None:
         st.session_state["connected_at"] = datetime.now()
         st.session_state["scan_result"] = None
         st.rerun()
-
-    st.divider()
-    st.caption(
-        "⚠️ Ye sirf educational scanner hai. Trading me risk hai. "
-        "Auto order place nahi hota. Apne risk pe trade karo."
-    )
 
 
 # ----------------------------------------------------------------------
@@ -266,9 +253,22 @@ def run_scan_ui(client: INDmoneyClient, master: Dict[str, Any], capital: float) 
     st.session_state["scan_result"] = result
     st.session_state["scan_time"] = datetime.now()
 
+    # टेलीग्राम सेंड लॉजिक वापस ऑन कर दिया
+    if result["results"]:
+        tg_token = st.session_state.get("tg_token", "").strip()
+        tg_chat = st.session_state.get("tg_chat", "").strip()
+        
+        if tg_token and tg_chat:
+            with st.spinner("Top signals Telegram pe bheje ja rahe hain..."):
+                ok, msg = send_signal_messages(tg_token, tg_chat, result["results"])
+                if ok:
+                    st.success("✅ Top 5 signals Telegram par bhej diye gaye!")
+                else:
+                    st.warning(f"⚠️ {msg}")
+
 
 # ----------------------------------------------------------------------
-# RESULTS (BUG 1 Fix: Score, Breakdown & Reject Reasons)
+# RESULTS
 # ----------------------------------------------------------------------
 def _breakdown_line(row: Dict[str, Any]) -> str:
     bd = row.get("breakdown") or {}
@@ -281,12 +281,10 @@ def _breakdown_line(row: Dict[str, Any]) -> str:
         f"**{row.get('score', 0)}/100**"
     )
 
-
 def _fmt(value: Any, default: str = "-") -> str:
     if value is None or value == "" or value == 0:
         return default
     return value
-
 
 def render_results() -> None:
     result = st.session_state.get("scan_result")
@@ -301,7 +299,6 @@ def render_results() -> None:
     results = result.get("results", [])
     all_scored = result.get("all_scored", [])
 
-    # ============ QUALIFIED SIGNALS ============
     if results:
         st.subheader("✅ Qualified Signals (Score ≥ 70)")
 
@@ -323,12 +320,19 @@ def render_results() -> None:
 
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-        st.download_button(
-            "⬇️ Signals CSV download",
-            data=pd.DataFrame(rows).to_csv(index=False).encode("utf-8"),
-            file_name="smart_option_signals.csv",
-            mime="text/csv",
-        )
+        # मैन्युअल टेलीग्राम सेंड बटन (अगर ऑटोमैटिक फेल हो जाए तो)
+        if st.button("📤 Send these signals to Telegram again"):
+            tg_token = st.session_state.get("tg_token", "").strip()
+            tg_chat = st.session_state.get("tg_chat", "").strip()
+            if not tg_token or not tg_chat:
+                st.error("Pehle sidebar me Telegram Token aur Chat ID daalo!")
+            else:
+                with st.spinner("Bhej rahe hain..."):
+                    ok, msg = send_signal_messages(tg_token, tg_chat, results)
+                    if ok:
+                        st.success("Telegram par bhej diya gaya!")
+                    else:
+                        st.error(msg)
 
         st.divider()
         st.subheader("🃏 Signal Cards")
@@ -363,9 +367,9 @@ def render_results() -> None:
                 st.markdown(f"**Score breakdown:** `{_breakdown_line(s)}`")
                 st.write(f"**Reason:** {s['reason']}")
     else:
-        st.warning("Is scan me koi signal 70+ score ke saath ₹5000 me fit nahi hua.")
+        st.warning(f"Is scan me koi signal 70+ score ke saath ₹{int(result.get('capital_used', 5000))} me fit nahi hua.")
 
-    # ============ SABHI SCORED STOCKS (Rejected included) ============
+    # ============ SABHI SCORED STOCKS ============
     st.divider()
     st.subheader("📊 Sabhi Scored Stocks — Qualified + Rejected")
 
@@ -407,19 +411,10 @@ def render_results() -> None:
                 if r.get("reason"):
                     st.caption(f"📝 {r['reason']}")
                 st.divider()
-    else:
-        st.info("Koi stock score nahi pa saka (data missing).")
-
-    with st.expander("⛔ Extra short-reason skips"):
-        skipped = result.get("skipped", [])
-        if skipped:
-            st.dataframe(pd.DataFrame(skipped), use_container_width=True, hide_index=True)
-        else:
-            st.write("Koi skip nahi hua.")
 
 
 # ----------------------------------------------------------------------
-# SEARCH (Yeh bilkul same rahega)
+# SEARCH
 # ----------------------------------------------------------------------
 def render_search(master: Dict[str, Any]) -> None:
     st.divider()
@@ -466,20 +461,30 @@ def render_main() -> None:
         if st.button("🔄 Disconnect / Naya Token", use_container_width=True):
             reset_connection()
             st.rerun()
+            
+        st.divider()
+        
+        # Telegram Config Sidebar me wapas add kar diya
+        st.header("📱 Telegram Settings")
+        st.text_input("Bot Token", type="password", key="tg_token", help="BotFather se milega")
+        st.text_input("Chat ID", key="tg_chat", help="@userinfobot se milega")
+        st.caption("Signals bhejne ke liye ye details bharna zaroori hai.")
+
         st.divider()
         st.caption("⚠️ Educational scanner only. Trading me risk hai.")
 
     st.markdown('<p class="main-title">🚀 Smart Option Scanner</p>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="sub-title">INDmoney live data | Nifty 200 scan | ₹5000 capital filter</p>',
+        '<p class="sub-title">INDmoney live data | Nifty 200 scan | Capital Filter</p>',
         unsafe_allow_html=True,
     )
 
     col1, col2 = st.columns([1, 2])
     with col1:
+        # Capital input with unique key to track value properly
         capital = st.number_input(
             "Capital (₹)", min_value=1000, max_value=100000,
-            value=5000, step=500,
+            value=5000, step=1000, key="capital_input"
         )
     with col2:
         st.write("")
@@ -492,6 +497,8 @@ def render_main() -> None:
     st.caption("Scan me 30-90 sec lag sakte hain — INDmoney rate limit 5 req/sec.")
 
     if scan_clicked:
+        # Capital ko update kar ke run_scan me pass kiya ja raha hai
+        st.session_state["scan_capital_used"] = capital
         run_scan_ui(client, master, float(capital))
 
     render_results()
