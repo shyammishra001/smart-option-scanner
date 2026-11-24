@@ -502,7 +502,6 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
     if direction == "BULL" and atm_index + 1 < len(strike_prices): candidates.append(strike_prices[atm_index + 1])
     if direction == "BEAR" and atm_index - 1 >= 0: candidates.append(strike_prices[atm_index - 1])
 
-    # कैपिटल का 90% मैक्स यूज़ करेगा
     max_total = capital * 0.9
 
     for strike in candidates:
@@ -557,7 +556,6 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
             "delta": round(float(delta), 3), "expiry": chain.get("expiry", ""),
         }, None
 
-    # यहाँ डायनामिक कैपिटल का मैसेज सेट किया गया है
     return None, f"{int(capital)} Capital me fit nahi"
 
 
@@ -582,8 +580,13 @@ def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
                 except INDmoneyError: continue
 
         for code in batch:
-            df = data.get(code) or data.get(code.replace("NSE_", ""))
-            if df is not None and not df.empty: out[code] = df
+            # FIX: DataFrame truth value ambiguity error fixed here
+            df = data.get(code)
+            if df is None or df.empty:
+                df = data.get(code.replace("NSE_", ""))
+                
+            if df is not None and not df.empty: 
+                out[code] = df
 
         pct = base_pct + span_pct * index / max(len(batches), 1)
         _report(progress_cb, pct, f"{interval} candles: {min(index * 5, total)}/{total}")
