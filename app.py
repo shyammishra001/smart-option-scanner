@@ -394,7 +394,7 @@ def render_search(master: Dict[str, Any]) -> None:
 def render_main() -> None:
     client: Optional[INDmoneyClient] = st.session_state.get("client")
     master: Optional[Dict[str, Any]] = st.session_state.get("master")
-    user_name = st.session_state.get("user_name", "INDmoney User")
+    user_name = st.session_state.get("first_name & last_name", "INDmoney User")
 
     if client is None or master is None:
         st.session_state["connected"] = False
