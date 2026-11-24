@@ -15,10 +15,7 @@ from .indmoney import (
     resolve_universe,
 )
 
-# Nifty 50 + Nifty Next 50 + Nifty 200 / liquid F&O names.
-# Master CSV se match hote hain; jo na mile wo skip ho jate hain.
 NIFTY_200: List[str] = [
-    # Nifty 50
     "ADANIENT", "ADANIPORTS", "APOLLOHOSP", "ASIANPAINT", "AXISBANK",
     "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BEL", "BHARTIARTL",
     "BPCL", "BRITANNIA", "CIPLA", "COALINDIA", "DRREDDY",
@@ -29,8 +26,6 @@ NIFTY_200: List[str] = [
     "NTPC", "POWERGRID", "SBILIFE", "SBIN", "SHRIRAMFIN",
     "SUNPHARMA", "TATACONSUM", "TATAMOTORS", "TATASTEEL", "TCS",
     "TECHM", "TITAN", "TRENT", "ULTRACEMCO", "WIPRO",
-
-    # Nifty Next 50 / Nifty 200
     "ABB", "ACC", "ADANIENSOL", "ADANIGREEN", "ADANIPOWER",
     "AMBUJACEM", "ASTRAL", "AUROPHARMA", "BAJAJHLDNG", "BAJAJHFL",
     "BANKBARODA", "BATAINDIA", "BERGEPAINT", "BHARATFORG", "BHEL",
@@ -54,8 +49,6 @@ NIFTY_200: List[str] = [
     "TATAPOWER", "TIINDIA", "TORNTPHARM", "TORNTPOWER", "TVSMOTOR",
     "UBL", "UNITDSPR", "UPL", "VBL", "VEDL",
     "VOLTAS", "YESBANK", "ZEEL", "ZYDUSLIFE",
-
-    # Liquid F&O / Nifty 200 fallback
     "AAVAS", "ABCAPITAL", "ABFRL", "AIAENG", "AJANTPHARM",
     "ALKEM", "APLAPOLLO", "ATUL", "AUBANK", "BALKRISIND",
     "BANKINDIA", "BAYERCROP", "BDL", "CAMS", "CDSL",
@@ -167,7 +160,6 @@ def _vwap_value(today: pd.DataFrame) -> float:
 
 
 def _vcp_score(daily: pd.DataFrame, direction: str) -> Tuple[int, List[str]]:
-    """Volatility Contraction Pattern — range chhoti, volume sookha, phir expansion."""
     if daily is None or len(daily) < 25:
         return 0, []
 
@@ -209,11 +201,7 @@ def _vcp_score(daily: pd.DataFrame, direction: str) -> Tuple[int, List[str]]:
     return min(score, 20), tags
 
 
-def _orb_score(
-    intraday: pd.DataFrame,
-    direction: str,
-) -> Tuple[int, List[str], Dict[str, Any]]:
-    """Opening Range Breakout — pehle 15 min (3 x 5-min) ke high/low."""
+def _orb_score(intraday: pd.DataFrame, direction: str) -> Tuple[int, List[str], Dict[str, Any]]:
     if intraday is None or len(intraday) < 5:
         return 0, [], {}
 
@@ -260,12 +248,7 @@ def _orb_score(
     }
 
 
-def _tech_score(
-    daily: Optional[pd.DataFrame],
-    intraday: Optional[pd.DataFrame],
-    quote: Any,
-    market_rs: float,
-) -> Optional[Dict[str, Any]]:
+def _tech_score(daily: Optional[pd.DataFrame], intraday: Optional[pd.DataFrame], quote: Any, market_rs: float) -> Optional[Dict[str, Any]]:
     if daily is None or intraday is None:
         return None
     if len(daily) < 60 or len(intraday) < 5:
@@ -404,30 +387,30 @@ def _tech_score(
     if atr_value <= 0:
         atr_value = price * 0.015
 
-   return {
-    "direction": direction,
-    "tech_score": float(tech_score),
-    "breakdown": {
-        "trend": int(bull_trend if direction == "BULL" else bear_trend),
-        "vcp": int(vcp_score),
-        "orb": int(orb_score),
-        "vwap": int(bull_momentum if direction == "BULL" else bear_momentum),
-        "oi": 0,  # option chain step me fill hoga
-    },
-    "tags": tags,
-    "price": float(price),
-    "day_change_pct": float(day_change_pct),
-    "rsi": float(rsi_value),
-    "atr": float(atr_value),
-    "ema20": float(e20),
-    "ema50": float(e50),
-    "ema200": float(e200),
-    "rs_return": float(rs_return),
-    "vwap": float(vwap),
-    "orb_high": float(orb_meta.get("orb_high", 0) or 0),
-    "orb_low": float(orb_meta.get("orb_low", 0) or 0),
-    "fake_breakout": fake_breakout,
-}
+    return {
+        "direction": direction,
+        "tech_score": float(tech_score),
+        "breakdown": {
+            "trend": int(bull_trend if direction == "BULL" else bear_trend),
+            "vcp": int(vcp_score),
+            "orb": int(orb_score),
+            "vwap": int(bull_momentum if direction == "BULL" else bear_momentum),
+            "oi": 0,
+        },
+        "tags": tags,
+        "price": float(price),
+        "day_change_pct": float(day_change_pct),
+        "rsi": float(rsi_value),
+        "atr": float(atr_value),
+        "ema20": float(e20),
+        "ema50": float(e50),
+        "ema200": float(e200),
+        "rs_return": float(rs_return),
+        "vwap": float(vwap),
+        "orb_high": float(orb_meta.get("orb_high", 0) or 0),
+        "orb_low": float(orb_meta.get("orb_low", 0) or 0),
+        "fake_breakout": fake_breakout,
+    }
 
 
 def _get_leg(strikes: Dict[str, Any], strike: float, side: str) -> Optional[Dict[str, Any]]:
@@ -443,11 +426,7 @@ def _get_leg(strikes: Dict[str, Any], strike: float, side: str) -> Optional[Dict
     return None
 
 
-def _lot_for_leg(
-    leg: Dict[str, Any],
-    lot_by_id: Dict[str, int],
-    lot_by_symbol: Dict[str, int],
-) -> int:
+def _lot_for_leg(leg: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol: Dict[str, int]) -> int:
     security_id = str(leg.get("security_id", "")).strip()
     if security_id and security_id in lot_by_id:
         return int(lot_by_id[security_id])
@@ -459,12 +438,7 @@ def _lot_for_leg(
     return 0
 
 
-def _option_score(
-    chain: Dict[str, Any],
-    direction: str,
-    day_change_pct: float,
-    spot_fallback: float = 0.0,
-) -> Tuple[int, List[str], Dict[str, Any]]:
+def _option_score(chain: Dict[str, Any], direction: str, day_change_pct: float, spot_fallback: float = 0.0) -> Tuple[int, List[str], Dict[str, Any]]:
     strikes = chain.get("strikes") or {}
     if not strikes:
         return 0, [], {}
@@ -541,23 +515,8 @@ def _option_score(
     }
 
 
-def _pick_trade(
-    chain: Dict[str, Any],
-    lot_by_id: Dict[str, int],
-    lot_by_symbol: Dict[str, int],
-    direction: str,
-    capital: float,
-    atr: float,
-    spot_fallback: float = 0.0,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """
-    5000 capital filter:
-      Total cost <= 4500
-      Premium 10-80
-      Max loss <= 1500
-    Bullish -> ATM ya 1 OTM CE
-    Bearish -> ATM ya 1 OTM PE
-    """
+def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol: Dict[str, int],
+                direction: str, capital: float, atr: float, spot_fallback: float = 0.0) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     strikes = chain.get("strikes") or {}
     if not strikes:
         return None, "Option chain khali hai"
@@ -612,10 +571,8 @@ def _pick_trade(
         if total_cost > max_total:
             continue
 
-        # Premium 35% SL
         premium_sl = premium * 0.65
 
-        # Underlying ATR-based SL — delta se option premium me convert
         greeks = leg.get("greeks") or {}
         delta = abs(_f(greeks.get("delta"), 0))
         if delta <= 0:
@@ -624,7 +581,6 @@ def _pick_trade(
         atr_value = _f(atr, 0)
         atr_sl = premium - (delta * atr_value) if atr_value > 0 else 0
 
-        # Jo pehle hit ho — higher SL price (tighter risk) choose karo
         stop_loss = max(premium_sl, atr_sl)
         if stop_loss <= 0 or stop_loss >= premium * 0.98:
             stop_loss = premium_sl
@@ -668,16 +624,9 @@ def _pick_trade(
     return None, "5000 Capital me fit nahi"
 
 
-def _fetch_histories(
-    client: INDmoneyClient,
-    codes: List[str],
-    interval: str,
-    start: datetime,
-    end: datetime,
-    progress_cb: Optional[Callable[[float, str], None]],
-    base_pct: float,
-    span_pct: float,
-) -> Dict[str, pd.DataFrame]:
+def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
+                     start: datetime, end: datetime, progress_cb: Optional[Callable[[float, str], None]],
+                     base_pct: float, span_pct: float) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
     total = len(codes)
     if total == 0:
@@ -693,7 +642,6 @@ def _fetch_histories(
             data = client.get_historical(batch, interval, start_ms, end_ms)
         except INDmoneyError:
             data = {}
-            # Fail ho to 1-1 retry karo
             for code in batch:
                 try:
                     data.update(client.get_historical([code], interval, start_ms, end_ms))
@@ -708,21 +656,14 @@ def _fetch_histories(
                 out[code] = df
 
         pct = base_pct + span_pct * index / max(len(batches), 1)
-        _report(
-            progress_cb,
-            pct,
-            f"{interval} candles: {min(index * 5, total)}/{total}",
-        )
+        _report(progress_cb, pct, f"{interval} candles: {min(index * 5, total)}/{total}")
 
     return out
 
 
-def run_scan(
-    client: INDmoneyClient,
-    master: Dict[str, Any],
-    capital: float = 5000,
-    progress_cb: Optional[Callable[[float, str], None]] = None,
-) -> Dict[str, Any]:
+def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 5000,
+             progress_cb: Optional[Callable[[float, str], None]] = None) -> Dict[str, Any]:
+    
     universe = resolve_universe(master, NIFTY_200)
     if not universe:
         raise RuntimeError("Master CSV me Nifty 200 stocks nahi mile. Instruments refresh karo.")
@@ -737,18 +678,10 @@ def run_scan(
 
     now = datetime.now(IST)
 
-    daily = _fetch_histories(
-        client, codes, "1day",
-        now - timedelta(days=350), now,
-        progress_cb, 10, 35,
-    )
+    daily = _fetch_histories(client, codes, "1day", now - timedelta(days=350), now, progress_cb, 10, 35)
     _report(progress_cb, 45, "Daily candles ready...")
 
-    intraday = _fetch_histories(
-        client, codes, "5minute",
-        now - timedelta(days=6), now,
-        progress_cb, 45, 25,
-    )
+    intraday = _fetch_histories(client, codes, "5minute", now - timedelta(days=6), now, progress_cb, 45, 25)
     _report(progress_cb, 70, "Intraday candles ready...")
 
     market_closed = False
@@ -756,7 +689,6 @@ def run_scan(
     if sample is not None and not sample.empty:
         market_closed = sample["ts"].iloc[-1].date() != now.date()
 
-    # Market RS
     returns: List[float] = []
     for stock in universe:
         d = daily.get(stock["scrip_code"])
@@ -766,16 +698,12 @@ def run_scan(
                 returns.append((float(d["c"].iloc[-1]) / base - 1) * 100)
     market_rs = float(np.median(returns)) if returns else 0.0
 
-    # ================= SCORE ALL =================
     all_scored: List[Dict[str, Any]] = []
     technical: List[Dict[str, Any]] = []
 
     for idx, stock in enumerate(universe, 1):
         code = stock["scrip_code"]
-        scored = _tech_score(
-            daily.get(code), intraday.get(code),
-            quotes.get(code, {}), market_rs,
-        )
+        scored = _tech_score(daily.get(code), intraday.get(code), quotes.get(code, {}), market_rs)
 
         base = {
             "stock_name": stock["symbol"],
@@ -786,22 +714,14 @@ def run_scan(
         }
 
         if scored is None:
-            all_scored.append({
-                **base, "score": 0,
-                "status": "❌ Data nahi",
-                "reason": "Candles nahi mile",
-            })
+            all_scored.append({**base, "score": 0, "status": "❌ Data nahi", "reason": "Candles nahi mile"})
             continue
 
         bd = dict(scored.get("breakdown") or base["breakdown"])
 
         if scored["direction"] == "NEUTRAL":
-            all_scored.append({
-                **base, "breakdown": bd,
-                "score": int(round(scored["tech_score"])),
-                "status": "❌ NEUTRAL",
-                "reason": "Trend clear nahi (50EMA / 200EMA mixed)",
-            })
+            all_scored.append({**base, "breakdown": bd, "score": int(round(scored["tech_score"])),
+                "status": "❌ NEUTRAL", "reason": "Trend clear nahi (50EMA / 200EMA mixed)"})
             continue
 
         if scored["tech_score"] < 45:
@@ -811,34 +731,20 @@ def run_scan(
             if bd["orb"] < 8: why.append("ORB breakout nahi")
             if bd["vwap"] < 8: why.append("VWAP/momentum weak")
             if "Fake Breakout (-30)" in scored["tags"]: why.append("Fake breakout")
-            all_scored.append({
-                **base, "breakdown": bd,
-                "score": int(round(scored["tech_score"])),
-                "status": "❌ Low Score",
-                "reason": ", ".join(why) or f"Score {int(round(scored['tech_score']))} < 45",
-            })
+            all_scored.append({**base, "breakdown": bd, "score": int(round(scored["tech_score"])),
+                "status": "❌ Low Score", "reason": ", ".join(why) or f"Score {int(round(scored['tech_score']))} < 45"})
             continue
 
-        # technical qualify
-        entry = {**stock, **scored, "breakdown": bd,
-                 "score": int(round(scored["tech_score"]))}
+        entry = {**stock, **scored, "breakdown": bd, "score": int(round(scored["tech_score"]))}
         technical.append(entry)
-        all_scored.append({
-            **base, "breakdown": bd,
-            "score": int(round(scored["tech_score"])),
-            "status": "⏳ Option chain pending",
-            "reason": "",
-            "_code": code,
-        })
+        all_scored.append({**base, "breakdown": bd, "score": int(round(scored["tech_score"])),
+            "status": "⏳ Option chain pending", "reason": "", "_code": code})
 
         if idx % 5 == 0 or idx == total:
-            _report(progress_cb, 70 + 5 * idx / total,
-                    f"{idx} / {total} stocks check ho gaye")
+            _report(progress_cb, 70 + 5 * idx / total, f"{idx} / {total} stocks check ho gaye")
 
-    # Top 15 technical candidates → option chain
     technical.sort(key=lambda x: x["tech_score"], reverse=True)
     technical = technical[:15]
-    tech_codes = {r["scrip_code"] for r in technical}
 
     _report(progress_cb, 75, f"{len(technical)} candidates ke option chain check ho rahe hain...")
 
@@ -861,16 +767,9 @@ def run_scan(
             expiry = expiries[0]
             chain = client.get_option_chain(row["security_id"], expiry)
 
-            option_score, option_tags, option_meta = _option_score(
-                chain, row["direction"], row["day_change_pct"], row["price"],
-            )
+            option_score, option_tags, option_meta = _option_score(chain, row["direction"], row["day_change_pct"], row["price"])
+            trade, reason = _pick_trade(chain, master["lot_by_id"], master["lot_by_symbol"], row["direction"], capital, row["atr"], row["price"])
 
-            trade, reason = _pick_trade(
-                chain, master["lot_by_id"], master["lot_by_symbol"],
-                row["direction"], capital, row["atr"], row["price"],
-            )
-
-            # OI score update
             if scored_ref:
                 scored_ref["breakdown"]["oi"] = int(option_score)
 
@@ -881,8 +780,7 @@ def run_scan(
                     scored_ref["score"] = final_score
                     scored_ref["status"] = "❌ 5000 me fit nahi"
                     scored_ref["reason"] = reason or "5000 Capital me fit nahi"
-                skipped.append({"stock": row["symbol"],
-                                "reason": reason or "5000 Capital me fit nahi"})
+                skipped.append({"stock": row["symbol"], "reason": reason or "5000 Capital me fit nahi"})
                 continue
 
             if final_score < 70:
@@ -890,8 +788,7 @@ def run_scan(
                     scored_ref["score"] = final_score
                     scored_ref["status"] = "❌ Score < 70"
                     scored_ref["reason"] = f"Score {final_score}/100 (70 chahiye)"
-                skipped.append({"stock": row["symbol"],
-                                "reason": f"Score {final_score}/100 < 70"})
+                skipped.append({"stock": row["symbol"], "reason": f"Score {final_score}/100 < 70"})
                 continue
 
             tags = list(dict.fromkeys(row["tags"] + option_tags))
@@ -900,45 +797,26 @@ def run_scan(
             signal = "BULLISH CE" if row["direction"] == "BULL" else "BEARISH PE"
 
             result_row = {
-                "stock_name": row["symbol"],
-                "stock_full_name": row["name"],
-                "stock_code": code,
-                "security_id": row["security_id"],
-                "signal": signal,
+                "stock_name": row["symbol"], "stock_full_name": row["name"], "stock_code": code,
+                "security_id": row["security_id"], "signal": signal,
                 "option_symbol": f"{row['symbol']} {trade['strike']:g} {trade['option_type']}",
-                "expiry": expiry,
-                "strike": trade["strike"],
-                "lot_size": trade["lot_size"],
-                "premium": trade["premium"],
-                "total_cost": trade["total_cost"],
-                "entry": trade["entry"],
-                "stop_loss": trade["stop_loss"],
-                "target1": trade["target1"],
-                "target2": trade["target2"],
-                "max_loss": trade["max_loss"],
-                "score": final_score,
-                "tech_score": round(row["tech_score"], 1),
-                "option_score": option_score,
+                "expiry": expiry, "strike": trade["strike"], "lot_size": trade["lot_size"],
+                "premium": trade["premium"], "total_cost": trade["total_cost"],
+                "entry": trade["entry"], "stop_loss": trade["stop_loss"],
+                "target1": trade["target1"], "target2": trade["target2"], "max_loss": trade["max_loss"],
+                "score": final_score, "tech_score": round(row["tech_score"], 1), "option_score": option_score,
                 "breakdown": dict(scored_ref["breakdown"]) if scored_ref else row["breakdown"],
-                "reason": reason_text,
-                "direction": row["direction"],
-                "underlying_ltp": round(row["price"], 2),
-                "day_change_pct": round(row["day_change_pct"], 2),
-                "rsi": round(row["rsi"], 1),
-                "pcr": option_meta.get("pcr"),
-                "reward_risk": trade["reward_risk"],
+                "reason": reason_text, "direction": row["direction"],
+                "underlying_ltp": round(row["price"], 2), "day_change_pct": round(row["day_change_pct"], 2),
+                "rsi": round(row["rsi"], 1), "pcr": option_meta.get("pcr"), "reward_risk": trade["reward_risk"],
             }
             results.append(result_row)
 
             if scored_ref:
                 scored_ref.update({
-                    "score": final_score,
-                    "status": "✅ Qualified",
-                    "reason": reason_text,
-                    "entry": trade["entry"],
-                    "stop_loss": trade["stop_loss"],
-                    "target1": trade["target1"],
-                    "target2": trade["target2"],
+                    "score": final_score, "status": "✅ Qualified", "reason": reason_text,
+                    "entry": trade["entry"], "stop_loss": trade["stop_loss"],
+                    "target1": trade["target1"], "target2": trade["target2"],
                 })
 
         except INDmoneyError:
@@ -952,12 +830,8 @@ def run_scan(
                 scored_ref["reason"] = str(exc)[:80]
             skipped.append({"stock": row["symbol"], "reason": "Scan error"})
 
-        _report(
-            progress_cb, 75 + 20 * index / max(len(technical), 1),
-            f"Option chain: {index}/{len(technical)}",
-        )
+        _report(progress_cb, 75 + 20 * index / max(len(technical), 1), f"Option chain: {index}/{len(technical)}")
 
-    # Clean helper key
     for r in all_scored:
         r.pop("_code", None)
 
@@ -967,13 +841,8 @@ def run_scan(
     _report(progress_cb, 100, "Scan complete")
 
     return {
-        "results": top_results,
-        "all_qualified": results,
-        "all_scored": all_scored,
-        "scanned": total,
-        "technical_candidates": len(technical),
-        "skipped": skipped,
-        "market_rs": round(market_rs, 2),
-        "as_of": now.strftime("%d-%b-%Y %H:%M IST"),
+        "results": top_results, "all_qualified": results, "all_scored": all_scored,
+        "scanned": total, "technical_candidates": len(technical), "skipped": skipped,
+        "market_rs": round(market_rs, 2), "as_of": now.strftime("%d-%b-%Y %H:%M IST"),
         "market_closed": market_closed,
     }
