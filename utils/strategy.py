@@ -166,7 +166,6 @@ def _vcp_score(daily: pd.DataFrame, direction: str) -> Tuple[int, List[str]]:
     recent = daily.tail(20).reset_index(drop=True)
     ranges: List[float] = []
 
-    # ERR FIX: np.array_split की जगह .iloc स्लाइसिंग यूज़ की है ताकि Numpy Index Error ना आये
     for i in range(4):
         part = recent.iloc[i * 5 : (i + 1) * 5]
         if len(part) < 2:
@@ -288,28 +287,18 @@ def _tech_score(daily: Optional[pd.DataFrame], intraday: Optional[pd.DataFrame],
     else:
         rs_return = 0.0
 
-    # ---------------- Trend (30) ----------------
     bull_trend = 0
-    if price > e50:
-        bull_trend += 8
-    if e50 > e200:
-        bull_trend += 7
-    if len(ema50) >= 11 and ema50.iloc[-1] > ema50.iloc[-11]:
-        bull_trend += 5
-    if rs_return > market_rs:
-        bull_trend += 10
+    if price > e50: bull_trend += 8
+    if e50 > e200: bull_trend += 7
+    if len(ema50) >= 11 and ema50.iloc[-1] > ema50.iloc[-11]: bull_trend += 5
+    if rs_return > market_rs: bull_trend += 10
 
     bear_trend = 0
-    if price < e50:
-        bear_trend += 8
-    if e50 < e200:
-        bear_trend += 7
-    if len(ema50) >= 11 and ema50.iloc[-1] < ema50.iloc[-11]:
-        bear_trend += 5
-    if rs_return < market_rs:
-        bear_trend += 10
+    if price < e50: bear_trend += 8
+    if e50 < e200: bear_trend += 7
+    if len(ema50) >= 11 and ema50.iloc[-1] < ema50.iloc[-11]: bear_trend += 5
+    if rs_return < market_rs: bear_trend += 10
 
-    # ---------------- Intraday momentum (15) ----------------
     i5 = i5.copy()
     i5["date"] = i5["ts"].dt.date
     today = i5[i5["date"] == i5["date"].max()].reset_index(drop=True)
@@ -321,26 +310,18 @@ def _tech_score(daily: Optional[pd.DataFrame], intraday: Optional[pd.DataFrame],
     signal_value = _f(signal_line.iloc[-1], 0)
 
     vwap = _vwap_value(today) if not today.empty else price
-    if not (vwap == vwap):
-        vwap = price
+    if not (vwap == vwap): vwap = price
 
     bull_momentum = 0
-    if price > vwap:
-        bull_momentum += 5
-    if 55 <= rsi_value <= 70:
-        bull_momentum += 5
-    if macd_value > signal_value:
-        bull_momentum += 5
+    if price > vwap: bull_momentum += 5
+    if 55 <= rsi_value <= 70: bull_momentum += 5
+    if macd_value > signal_value: bull_momentum += 5
 
     bear_momentum = 0
-    if price < vwap:
-        bear_momentum += 5
-    if 30 <= rsi_value <= 45:
-        bear_momentum += 5
-    if macd_value < signal_value:
-        bear_momentum += 5
+    if price < vwap: bear_momentum += 5
+    if 30 <= rsi_value <= 45: bear_momentum += 5
+    if macd_value < signal_value: bear_momentum += 5
 
-    # ---------------- Direction ----------------
     if price > e50 and e50 > e200 and (bull_trend + bull_momentum) >= (bear_trend + bear_momentum):
         direction = "BULL"
     elif price < e50 and e50 < e200 and (bear_trend + bear_momentum) > (bull_trend + bull_momentum):
@@ -361,7 +342,6 @@ def _tech_score(daily: Optional[pd.DataFrame], intraday: Optional[pd.DataFrame],
     tech_score += vcp_score + orb_score
     tags = list(vcp_tags + orb_tags)
 
-    # ---------------- Fake breakout penalty ----------------
     fake_breakout = False
     if direction == "BULL" and orb_meta.get("orb_high") is not None:
         last_close = orb_meta.get("last_close", price)
@@ -416,8 +396,7 @@ def _tech_score(daily: Optional[pd.DataFrame], intraday: Optional[pd.DataFrame],
 
 def _get_leg(strikes: Dict[str, Any], strike: float, side: str) -> Optional[Dict[str, Any]]:
     for key, value in strikes.items():
-        if not isinstance(value, dict):
-            continue
+        if not isinstance(value, dict): continue
         try:
             if abs(float(key) - float(strike)) < 1e-6:
                 leg = value.get(side)
@@ -441,20 +420,16 @@ def _lot_for_leg(leg: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol: 
 
 def _option_score(chain: Dict[str, Any], direction: str, day_change_pct: float, spot_fallback: float = 0.0) -> Tuple[int, List[str], Dict[str, Any]]:
     strikes = chain.get("strikes") or {}
-    if not strikes:
-        return 0, [], {}
+    if not strikes: return 0, [], {}
 
     ce_oi_total = pe_oi_total = 0.0
     ce_oi_change = pe_oi_change = 0.0
     oi_by_strike: Dict[float, float] = {}
 
     for key, value in strikes.items():
-        if not isinstance(value, dict):
-            continue
-        try:
-            strike = float(key)
-        except (TypeError, ValueError):
-            continue
+        if not isinstance(value, dict): continue
+        try: strike = float(key)
+        except (TypeError, ValueError): continue
 
         ce = value.get("ce") or {}
         pe = value.get("pe") or {}
@@ -470,8 +445,7 @@ def _option_score(chain: Dict[str, Any], direction: str, day_change_pct: float, 
         pe_oi_change += pe_oi - pe_prev
         oi_by_strike[strike] = ce_oi + pe_oi
 
-    if not oi_by_strike:
-        return 0, [], {}
+    if not oi_by_strike: return 0, [], {}
 
     pcr = pe_oi_total / ce_oi_total if ce_oi_total > 0 else 0.0
 
@@ -488,26 +462,17 @@ def _option_score(chain: Dict[str, Any], direction: str, day_change_pct: float, 
     tags: List[str] = []
 
     if direction == "BULL":
-        if change > 0 and ce_oi_change > 0:
-            score += 6
-            tags.append("Long Buildup")
+        if change > 0 and ce_oi_change > 0: score += 6; tags.append("Long Buildup")
     else:
-        if change < 0 and pe_oi_change > 0:
-            score += 6
-            tags.append("Short Buildup")
+        if change < 0 and pe_oi_change > 0: score += 6; tags.append("Short Buildup")
 
-    if 0.8 <= pcr <= 1.2:
-        score += 5
-        tags.append("PCR 0.8-1.2")
-    elif 0.7 <= pcr <= 1.3:
-        score += 3
+    if 0.8 <= pcr <= 1.2: score += 5; tags.append("PCR 0.8-1.2")
+    elif 0.7 <= pcr <= 1.3: score += 3
 
     if atm is not None and max_oi_strike in strike_list:
         atm_index = strike_list.index(atm)
         max_index = strike_list.index(max_oi_strike)
-        if abs(max_index - atm_index) <= 1:
-            score += 4
-            tags.append("OI near ATM")
+        if abs(max_index - atm_index) <= 1: score += 4; tags.append("OI near ATM")
 
     return min(score, 15), tags, {
         "pcr": round(float(pcr), 2),
@@ -519,19 +484,13 @@ def _option_score(chain: Dict[str, Any], direction: str, day_change_pct: float, 
 def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol: Dict[str, int],
                 direction: str, capital: float, atr: float, spot_fallback: float = 0.0) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     strikes = chain.get("strikes") or {}
-    if not strikes:
-        return None, "Option chain khali hai"
+    if not strikes: return None, "Option chain khali hai"
 
-    try:
-        strike_prices = sorted({float(k) for k in strikes.keys()})
-    except (TypeError, ValueError):
-        return None, "Strike data galat hai"
+    try: strike_prices = sorted({float(k) for k in strikes.keys()})
+    except (TypeError, ValueError): return None, "Strike data galat hai"
 
-    spot = _f(chain.get("underlying_ltp"), 0)
-    if spot <= 0:
-        spot = _f(spot_fallback, 0)
-    if spot <= 0:
-        return None, "Underlying price nahi mila"
+    spot = _f(chain.get("underlying_ltp"), 0) or _f(spot_fallback, 0)
+    if spot <= 0: return None, "Underlying price nahi mila"
 
     atm = min(strike_prices, key=lambda x: abs(x - spot))
     atm_index = strike_prices.index(atm)
@@ -540,89 +499,66 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
     option_type = "CE" if direction == "BULL" else "PE"
 
     candidates = [atm]
+    if direction == "BULL" and atm_index + 1 < len(strike_prices): candidates.append(strike_prices[atm_index + 1])
+    if direction == "BEAR" and atm_index - 1 >= 0: candidates.append(strike_prices[atm_index - 1])
 
-    if direction == "BULL" and atm_index + 1 < len(strike_prices):
-        candidates.append(strike_prices[atm_index + 1])
-
-    if direction == "BEAR" and atm_index - 1 >= 0:
-        candidates.append(strike_prices[atm_index - 1])
-
+    # कैपिटल का 90% मैक्स यूज़ करेगा
     max_total = capital * 0.9
 
     for strike in candidates:
         leg = _get_leg(strikes, strike, side)
-        if not leg:
-            continue
+        if not leg: continue
 
         premium = _f(leg.get("last_price"), 0)
         if premium <= 0:
             bid = _f(leg.get("top_bid_price"), 0)
             ask = _f(leg.get("top_ask_price"), 0)
-            if bid > 0 and ask > 0:
-                premium = (bid + ask) / 2
+            if bid > 0 and ask > 0: premium = (bid + ask) / 2
 
-        if premium <= 0 or not (10 <= premium <= 80):
-            continue
+        if premium <= 0 or not (10 <= premium <= 80): continue
 
         lot = _lot_for_leg(leg, lot_by_id, lot_by_symbol)
-        if not lot:
-            continue
+        if not lot: continue
 
         total_cost = premium * lot
-        if total_cost > max_total:
-            continue
+        if total_cost > max_total: continue
 
         premium_sl = premium * 0.65
-
         greeks = leg.get("greeks") or {}
         delta = abs(_f(greeks.get("delta"), 0))
-        if delta <= 0:
-            delta = 0.5
+        if delta <= 0: delta = 0.5
 
         atr_value = _f(atr, 0)
         atr_sl = premium - (delta * atr_value) if atr_value > 0 else 0
 
         stop_loss = max(premium_sl, atr_sl)
-        if stop_loss <= 0 or stop_loss >= premium * 0.98:
-            stop_loss = premium_sl
+        if stop_loss <= 0 or stop_loss >= premium * 0.98: stop_loss = premium_sl
 
         stop_loss = round(max(stop_loss, 0.05), 2)
         risk = premium - stop_loss
-
-        if risk < 0.5:
-            continue
+        if risk < 0.5: continue
 
         max_loss = risk * lot
-        if max_loss > 1500:
-            continue
+        if max_loss > 1500: continue
 
         target1 = round(premium + 1.5 * risk, 2)
         target2 = round(premium + 2.5 * risk, 2)
 
         reward_risk = (target2 - premium) / risk if risk > 0 else 0
-        if reward_risk < 2.0:
-            continue
+        if reward_risk < 2.0: continue
 
         return {
-            "strike": float(strike),
-            "option_type": option_type,
-            "side": side,
-            "premium": round(float(premium), 2),
-            "entry": round(float(premium), 2),
-            "stop_loss": stop_loss,
-            "target1": target1,
-            "target2": target2,
-            "risk": round(float(risk), 2),
-            "reward_risk": round(float(reward_risk), 2),
-            "lot_size": int(lot),
-            "total_cost": round(float(total_cost), 2),
-            "max_loss": round(float(max_loss), 2),
-            "option_security_id": str(leg.get("security_id", "")),
-            "delta": round(float(delta), 3),
-            "expiry": chain.get("expiry", ""),
+            "strike": float(strike), "option_type": option_type, "side": side,
+            "premium": round(float(premium), 2), "entry": round(float(premium), 2),
+            "stop_loss": stop_loss, "target1": target1, "target2": target2,
+            "risk": round(float(risk), 2), "reward_risk": round(float(reward_risk), 2),
+            "lot_size": int(lot), "total_cost": round(float(total_cost), 2),
+            "max_loss": round(float(max_loss), 2), "option_security_id": str(leg.get("security_id", "")),
+            "delta": round(float(delta), 3), "expiry": chain.get("expiry", ""),
         }, None
 
-    return None, "5000 Capital me fit nahi"
+    # यहाँ डायनामिक कैपिटल का मैसेज सेट किया गया है
+    return None, f"{int(capital)} Capital me fit nahi"
 
 
 def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
@@ -630,12 +566,10 @@ def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
                      base_pct: float, span_pct: float) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
     total = len(codes)
-    if total == 0:
-        return out
+    if total == 0: return out
 
     start_ms = int(start.timestamp() * 1000)
     end_ms = int(end.timestamp() * 1000)
-
     batches = list(chunks(codes, 5))
 
     for index, batch in enumerate(batches, 1):
@@ -644,17 +578,12 @@ def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
         except INDmoneyError:
             data = {}
             for code in batch:
-                try:
-                    data.update(client.get_historical([code], interval, start_ms, end_ms))
-                except INDmoneyError:
-                    continue
+                try: data.update(client.get_historical([code], interval, start_ms, end_ms))
+                except INDmoneyError: continue
 
         for code in batch:
-            df = data.get(code)
-            if df is None:
-                df = data.get(code.replace("NSE_", ""))
-            if df is not None and not df.empty:
-                out[code] = df
+            df = data.get(code) or data.get(code.replace("NSE_", ""))
+            if df is not None and not df.empty: out[code] = df
 
         pct = base_pct + span_pct * index / max(len(batches), 1)
         _report(progress_cb, pct, f"{interval} candles: {min(index * 5, total)}/{total}")
@@ -662,23 +591,20 @@ def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
     return out
 
 
-def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50000,
+def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 5000,
              progress_cb: Optional[Callable[[float, str], None]] = None) -> Dict[str, Any]:
     
     universe = resolve_universe(master, NIFTY_200)
-    if not universe:
-        raise RuntimeError("Master CSV me Nifty 200 stocks nahi mile. Instruments refresh karo.")
+    if not universe: raise RuntimeError("Master CSV me Nifty 200 stocks nahi mile.")
 
     total = len(universe)
     _report(progress_cb, 2, f"0 / {total} stocks — scan shuru...")
 
     codes = [stock["scrip_code"] for stock in universe]
-
     quotes = client.get_full_quotes(codes)
     _report(progress_cb, 8, "Live quotes aa gaye...")
 
     now = datetime.now(IST)
-
     daily = _fetch_histories(client, codes, "1day", now - timedelta(days=350), now, progress_cb, 10, 35)
     _report(progress_cb, 45, "Daily candles ready...")
 
@@ -695,8 +621,7 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
         d = daily.get(stock["scrip_code"])
         if d is not None and len(d) >= 21:
             base = _f(d["c"].iloc[-21], 0)
-            if base > 0:
-                returns.append((float(d["c"].iloc[-1]) / base - 1) * 100)
+            if base > 0: returns.append((float(d["c"].iloc[-1]) / base - 1) * 100)
     market_rs = float(np.median(returns)) if returns else 0.0
 
     all_scored: List[Dict[str, Any]] = []
@@ -707,10 +632,8 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
         scored = _tech_score(daily.get(code), intraday.get(code), quotes.get(code, {}), market_rs)
 
         base = {
-            "stock_name": stock["symbol"],
-            "stock_full_name": stock["name"],
-            "stock_code": code,
-            "security_id": stock["security_id"],
+            "stock_name": stock["symbol"], "stock_full_name": stock["name"],
+            "stock_code": code, "security_id": stock["security_id"],
             "breakdown": {"trend": 0, "vcp": 0, "orb": 0, "vwap": 0, "oi": 0},
         }
 
@@ -759,9 +682,7 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
         try:
             expiries = client.get_expiries(row["symbol"])
             if not expiries:
-                if scored_ref:
-                    scored_ref["status"] = "❌ Expiry missing"
-                    scored_ref["reason"] = "Expiry list nahi mili"
+                if scored_ref: scored_ref["status"] = "❌ Expiry missing"; scored_ref["reason"] = "Expiry list nahi mili"
                 skipped.append({"stock": row["symbol"], "reason": "Expiry list nahi mili"})
                 continue
 
@@ -771,30 +692,25 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
             option_score, option_tags, option_meta = _option_score(chain, row["direction"], row["day_change_pct"], row["price"])
             trade, reason = _pick_trade(chain, master["lot_by_id"], master["lot_by_symbol"], row["direction"], capital, row["atr"], row["price"])
 
-            if scored_ref:
-                scored_ref["breakdown"]["oi"] = int(option_score)
-
+            if scored_ref: scored_ref["breakdown"]["oi"] = int(option_score)
             final_score = int(round(row["tech_score"] + option_score))
 
             if not trade:
                 if scored_ref:
-                    scored_ref["score"] = final_score
-                    scored_ref["status"] = "❌ 5000 me fit nahi"
-                    scored_ref["reason"] = reason or "5000 Capital me fit nahi"
-                skipped.append({"stock": row["symbol"], "reason": reason or "5000 Capital me fit nahi"})
+                    scored_ref["score"] = final_score; scored_ref["status"] = f"❌ {int(capital)} me fit nahi"
+                    scored_ref["reason"] = reason or f"{int(capital)} Capital me fit nahi"
+                skipped.append({"stock": row["symbol"], "reason": reason or f"{int(capital)} Capital me fit nahi"})
                 continue
 
             if final_score < 70:
                 if scored_ref:
-                    scored_ref["score"] = final_score
-                    scored_ref["status"] = "❌ Score < 70"
+                    scored_ref["score"] = final_score; scored_ref["status"] = "❌ Score < 70"
                     scored_ref["reason"] = f"Score {final_score}/100 (70 chahiye)"
                 skipped.append({"stock": row["symbol"], "reason": f"Score {final_score}/100 < 70"})
                 continue
 
             tags = list(dict.fromkeys(row["tags"] + option_tags))
             reason_text = " + ".join(tags) if tags else "Technical + Option Chain"
-
             signal = "BULLISH CE" if row["direction"] == "BULL" else "BEARISH PE"
 
             result_row = {
@@ -821,20 +737,15 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
                 })
 
         except INDmoneyError:
-            if scored_ref:
-                scored_ref["status"] = "❌ Option chain error"
-                scored_ref["reason"] = "Option chain data nahi mila"
+            if scored_ref: scored_ref["status"] = "❌ Option chain error"; scored_ref["reason"] = "Option chain data nahi mila"
             skipped.append({"stock": row["symbol"], "reason": "Option chain data nahi mila"})
         except Exception as exc:
-            if scored_ref:
-                scored_ref["status"] = "❌ Error"
-                scored_ref["reason"] = str(exc)[:80]
+            if scored_ref: scored_ref["status"] = "❌ Error"; scored_ref["reason"] = str(exc)[:80]
             skipped.append({"stock": row["symbol"], "reason": "Scan error"})
 
         _report(progress_cb, 75 + 20 * index / max(len(technical), 1), f"Option chain: {index}/{len(technical)}")
 
-    for r in all_scored:
-        r.pop("_code", None)
+    for r in all_scored: r.pop("_code", None)
 
     results.sort(key=lambda x: x["score"], reverse=True)
     top_results = results[:5]
@@ -845,5 +756,5 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
         "results": top_results, "all_qualified": results, "all_scored": all_scored,
         "scanned": total, "technical_candidates": len(technical), "skipped": skipped,
         "market_rs": round(market_rs, 2), "as_of": now.strftime("%d-%b-%Y %H:%M IST"),
-        "market_closed": market_closed,
+        "market_closed": market_closed, "capital_used": capital,
     }
