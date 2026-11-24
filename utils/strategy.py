@@ -662,7 +662,7 @@ def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
     return out
 
 
-def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 5000,
+def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50000,
              progress_cb: Optional[Callable[[float, str], None]] = None) -> Dict[str, Any]:
     
     universe = resolve_universe(master, NIFTY_200)
