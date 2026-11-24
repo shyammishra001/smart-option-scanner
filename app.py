@@ -16,11 +16,10 @@ from utils.indmoney import (
 )
 from utils.strategy import run_scan
 
-# Telegram DISABLED per user request — code base me hai par use nahi ho raha
+# Telegram DISABLED per user request (टेलीग्राम का कोड डिलीट नहीं किया है, सिर्फ बंद कर दिया है)
 # from utils.telegram import send_signal_messages
 
 API_BASE = "https://api.indstocks.com"
-
 
 # ----------------------------------------------------------------------
 # Page config
@@ -44,7 +43,7 @@ st.markdown(
 
 
 # ----------------------------------------------------------------------
-# Session
+# Session State
 # ----------------------------------------------------------------------
 def init_state() -> None:
     defaults = {
@@ -64,14 +63,10 @@ def reset_connection() -> None:
 
 
 # ----------------------------------------------------------------------
-# TOKEN HELPERS (BUG 2 fix)
+# TOKEN HELPERS (BUG 2 Fix: Double Bearer & Fake Errors)
 # ----------------------------------------------------------------------
 def clean_token(raw: str) -> str:
-    """
-    - Trim spaces
-    - 'Bearer ' prefix (any case) strip
-    Double-Bearer bug yahin khatam hota hai.
-    """
+    """स्पेस हटाता है और डबल Bearer बग को फिक्स करता है"""
     token = (raw or "").strip()
     token = re.sub(r"^[Bb][Ee][Aa][Rr][Ee][Rr]\s+", "", token).strip()
     return token
@@ -97,10 +92,7 @@ def _extract_reliance_ltp(payload: Any) -> float:
 
 
 def test_token_direct(token: str) -> Tuple[bool, str]:
-    """
-    Direct INDmoney test — GET /market/quotes/full?scrip-codes=NSE_2885
-    Bearer aur raw dono try karta hai. Asli API ka error return karta hai.
-    """
+    """सीधा INDmoney API से टेस्ट करता है और असली एरर दिखाता है"""
     if not token:
         return False, "Token khali hai"
 
@@ -127,7 +119,7 @@ def test_token_direct(token: str) -> Tuple[bool, str]:
             suffix = f" — RELIANCE LTP = ₹{ltp}" if ltp else ""
             return True, f"Token sahi hai ({label} auth){suffix}"
 
-        # Real API error nikalo
+        # API का असली मैसेज निकालो
         api_msg = ""
         try:
             err = r.json()
@@ -151,7 +143,7 @@ def load_master(client: INDmoneyClient) -> Dict[str, Any]:
 
 
 # ----------------------------------------------------------------------
-# LOGIN — sirf 1 box (BUG 3 fix)
+# LOGIN (BUG 3 Fix: सिर्फ 1 बॉक्स मांगेगा)
 # ----------------------------------------------------------------------
 def render_login() -> None:
     st.markdown('<p class="main-title">🔐 Smart Option Scanner</p>', unsafe_allow_html=True)
@@ -186,7 +178,6 @@ def render_login() -> None:
             use_container_width=True, key="btn_test",
         )
 
-    # Current input value session se padho (reliable)
     raw_token = st.session_state.get("login_token_input", "")
     token = clean_token(raw_token)
 
@@ -197,7 +188,10 @@ def render_login() -> None:
         else:
             with st.spinner("Token test ho raha hai..."):
                 ok, message = test_token_direct(token)
-            st.success(message) if ok else st.error(message)
+            if ok:
+                st.success(message)
+            else:
+                st.error(message)
 
     # --- CONNECT BUTTON ---
     if connect_clicked:
@@ -210,9 +204,6 @@ def render_login() -> None:
 
         if not ok:
             st.error(message)
-            st.caption(
-                "Token INDstocks dashboard me active hai? Fir bhi issue ho to naya token generate karo."
-            )
             return
 
         st.success(message)
@@ -240,7 +231,7 @@ def render_login() -> None:
 
 
 # ----------------------------------------------------------------------
-# SCAN
+# SCAN UI
 # ----------------------------------------------------------------------
 def run_scan_ui(client: INDmoneyClient, master: Dict[str, Any], capital: float) -> None:
     progress_bar = st.progress(0)
@@ -259,9 +250,6 @@ def run_scan_ui(client: INDmoneyClient, master: Dict[str, Any], capital: float) 
     except INDmoneyError as exc:
         progress_bar.empty(); status_box.empty(); counter_box.empty()
         st.error(f"Scan fail ho gaya: {exc}")
-        st.caption(
-            "Token expire ho gaya ho sakta hai. Sidebar → 'Disconnect / Naya Token' → naya token paste karo."
-        )
         return
     except Exception as exc:
         progress_bar.empty(); status_box.empty(); counter_box.empty()
@@ -278,13 +266,9 @@ def run_scan_ui(client: INDmoneyClient, master: Dict[str, Any], capital: float) 
     st.session_state["scan_result"] = result
     st.session_state["scan_time"] = datetime.now()
 
-    # Telegram DISABLED — scan bina Telegram ke chalta hai
-    # if result["results"]:
-    #     send_signal_messages(...)
-
 
 # ----------------------------------------------------------------------
-# RESULTS — score breakdown (BUG 1 fix)
+# RESULTS (BUG 1 Fix: Score, Breakdown & Reject Reasons)
 # ----------------------------------------------------------------------
 def _breakdown_line(row: Dict[str, Any]) -> str:
     bd = row.get("breakdown") or {}
@@ -381,7 +365,7 @@ def render_results() -> None:
     else:
         st.warning("Is scan me koi signal 70+ score ke saath ₹5000 me fit nahi hua.")
 
-    # ============ SABHI SCORED STOCKS (including rejects) ============
+    # ============ SABHI SCORED STOCKS (Rejected included) ============
     st.divider()
     st.subheader("📊 Sabhi Scored Stocks — Qualified + Rejected")
 
@@ -435,7 +419,7 @@ def render_results() -> None:
 
 
 # ----------------------------------------------------------------------
-# SEARCH — unchanged
+# SEARCH (Yeh bilkul same rahega)
 # ----------------------------------------------------------------------
 def render_search(master: Dict[str, Any]) -> None:
     st.divider()
@@ -498,7 +482,8 @@ def render_main() -> None:
             value=5000, step=500,
         )
     with col2:
-        st.write(""); st.write("")
+        st.write("")
+        st.write("")
         scan_clicked = st.button(
             "🚀 SCAN NOW", type="primary",
             use_container_width=True, key="scan_now",
