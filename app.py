@@ -49,6 +49,7 @@ def init_state() -> None:
         "search_box": "", "login_token_input": "",
         "tg_token": get_secret("TELEGRAM_BOT_TOKEN", ""),
         "tg_chat": get_secret("TELEGRAM_CHAT_ID", ""),
+        "user_name": "INDmoney User",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -58,6 +59,7 @@ def reset_connection() -> None:
     for k in ("client", "master", "scan_result", "scan_time", "connected_at"):
         st.session_state[k] = None
     st.session_state["connected"] = False
+    st.session_state["user_name"] = "INDmoney User"
 
 def clean_token(raw: str) -> str:
     token = (raw or "").strip()
@@ -196,12 +198,28 @@ def render_login() -> None:
             except Exception as exc:
                 st.error(f"Market data load fail: {exc}")
                 return
+                
+            # API Token se User ka Naam nikalna
+            user_name = "INDmoney User"
+            try:
+                profile = client.test_token()
+                # Alag alag API responses ke hisaab se name check karega
+                user_name = (
+                    profile.get("name") 
+                    or profile.get("display_name") 
+                    or profile.get("client_id") 
+                    or profile.get("user_name") 
+                    or "INDmoney User"
+                )
+            except Exception:
+                pass
 
         st.session_state["client"] = client
         st.session_state["master"] = master
         st.session_state["connected"] = True
         st.session_state["connected_at"] = datetime.now()
         st.session_state["scan_result"] = None
+        st.session_state["user_name"] = user_name
         st.rerun()
 
 def run_scan_ui(client: INDmoneyClient, master: Dict[str, Any], capital: float) -> None:
@@ -240,10 +258,11 @@ def run_scan_ui(client: INDmoneyClient, master: Dict[str, Any], capital: float) 
     if result["results"]:
         tg_token = st.session_state.get("tg_token", "").strip()
         tg_chat = st.session_state.get("tg_chat", "").strip()
+        user_name = st.session_state.get("user_name", "INDmoney User")
         
         if tg_token and tg_chat:
             with st.spinner("Top 5 signals Telegram pe bheje ja rahe hain..."):
-                ok, msg = send_signal_messages(tg_token, tg_chat, result["results"])
+                ok, msg = send_signal_messages(tg_token, tg_chat, result["results"], user_name)
                 if ok:
                     st.success("✅ Top 5 signals Telegram par bhej diye gaye!")
                 else:
@@ -259,11 +278,6 @@ def _breakdown_line(row: Dict[str, Any]) -> str:
         f"OI {bd.get('oi', 0)}/15 = "
         f"**{row.get('score', 0)}/100**"
     )
-
-def _fmt(value: Any, default: str = "-") -> str:
-    if value is None or value == "" or value == 0:
-        return default
-    return value
 
 def render_results() -> None:
     result = st.session_state.get("scan_result")
@@ -284,8 +298,8 @@ def render_results() -> None:
         for s in results:
             rows.append({
                 "Stock": s["stock_name"],
-                "Company": s.get("stock_full_name", ""),
-                "Code": s["stock_code"],
+                "Strike Price": s["strike"],
+                "Current Price": s.get("underlying_ltp", "-"),
                 "Score / 100": s["score"],
                 "Entry": s["entry"],
                 "SL": s["stop_loss"],
@@ -298,11 +312,13 @@ def render_results() -> None:
         if st.button("📤 Send Top 5 to Telegram again"):
             tg_token = st.session_state.get("tg_token", "").strip()
             tg_chat = st.session_state.get("tg_chat", "").strip()
+            user_name = st.session_state.get("user_name", "INDmoney User")
+            
             if not tg_token or not tg_chat:
-                st.error("Pehle sidebar me Telegram Token aur Chat ID daalo!")
+                st.error("Pehle Streamlit Secrets me Telegram Token aur Chat ID set karo!")
             else:
                 with st.spinner("Bhej rahe hain..."):
-                    ok, msg = send_signal_messages(tg_token, tg_chat, results)
+                    ok, msg = send_signal_messages(tg_token, tg_chat, results, user_name)
                     if ok:
                         st.success("Telegram par bhej diya gaya!")
                     else:
@@ -375,6 +391,7 @@ def render_search(master: Dict[str, Any]) -> None:
 def render_main() -> None:
     client: Optional[INDmoneyClient] = st.session_state.get("client")
     master: Optional[Dict[str, Any]] = st.session_state.get("master")
+    user_name = st.session_state.get("user_name", "INDmoney User")
 
     if client is None or master is None:
         st.session_state["connected"] = False
@@ -384,13 +401,12 @@ def render_main() -> None:
     with st.sidebar:
         st.header("⚙️ Connection")
         st.write("**Status:** Connected")
+        st.write(f"**User:** {user_name}")
+        
         if st.button("🔄 Disconnect / Naya Token", use_container_width=True):
             reset_connection()
             st.rerun()
             
-        st.divider()
-        
-        st.caption("Developer Name - Shyam Mishra")
         st.divider()
         st.caption("⚠️ Educational scanner only. Trading me risk hai.")
 
