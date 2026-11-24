@@ -69,58 +69,79 @@ class INDmoneyClient:
             self._last_request = time.monotonic()
 
     def _headers(self) -> Dict[str, str]:
-        token = f"Bearer {self.token}" if self._bearer else self.token
-        headers = {"Accept": "application/json", "Authorization": token}
-        if self.api_key:
-            headers["X-API-KEY"] = self.api_key
-        return headers
+    token = self.token.strip()
+    # Double-Bearer bug fix: agar user ne "Bearer xyz" paste kiya to strip
+    token = re.sub(r"^[Bb][Ee][Aa][Rr][Ee][Rr]\s+", "", token).strip()
+    if self._bearer:
+        token = f"Bearer {token}"
+    headers = {"Accept": "application/json", "Authorization": token}
+    if self.api_key:
+        headers["X-API-KEY"] = self.api_key
+    return headers
 
     def _get(self, path: str, params: Optional[Dict[str, Any]] = None,
-             raw: bool = False, retries: int = 3) -> Any:
-        last_error: Optional[Exception] = None
+         raw: bool = False, retries: int = 3) -> Any:
+    last_error: Optional[Exception] = None
 
-        for attempt in range(retries):
-            self._throttle()
+    for attempt in range(retries):
+        self._throttle()
+        try:
+            response = requests.get(
+                f"{BASE_URL}{path}", params=params,
+                headers=self._headers(), timeout=self.timeout,
+            )
+
+            if response.status_code == 429:
+                time.sleep(1.0 + attempt)
+                continue
+
+            # Asli API message nikalo
+            api_msg = ""
             try:
-                response = requests.get(
-                    f"{BASE_URL}{path}",
-                    params=params,
-                    headers=self._headers(),
-                    timeout=self.timeout,
+                err_payload = response.json()
+                api_msg = (
+                    err_payload.get("message")
+                    or err_payload.get("error")
+                    or err_payload.get("error_description")
+                    or ""
+                )
+            except Exception:
+                api_msg = (response.text or "")[:300]
+
+            if response.status_code in (401, 403):
+                if not self._bearer:
+                    self._bearer = True
+                    continue
+                raise INDmoneyError(
+                    f"Token galat ya expire (HTTP {response.status_code})"
+                    + (f": {api_msg}" if api_msg else "")
                 )
 
-                if response.status_code == 429:
-                    time.sleep(1.0 + attempt)
-                    continue
+            if response.status_code >= 400:
+                raise INDmoneyError(
+                    f"INDmoney request fail (HTTP {response.status_code})"
+                    + (f": {api_msg}" if api_msg else "")
+                )
 
-                if response.status_code in (401, 403):
-                    if not self._bearer:
-                        self._bearer = True
-                        continue
-                    raise INDmoneyError("Token expire ya galat hai. Naya token generate karo.")
+            if raw:
+                return response.text
 
-                if response.status_code >= 400:
-                    raise INDmoneyError("INDmoney request fail ho gayi. Thodi der baad try karo.")
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise INDmoneyError("INDmoney se galat response aaya.") from exc
 
-                if raw:
-                    return response.text
+            if isinstance(payload, dict) and payload.get("success") is False:
+                message = payload.get("message") or payload.get("error") or ""
+                raise INDmoneyError(str(message) or "INDmoney ne request reject ki.")
 
-                try:
-                    payload = response.json()
-                except ValueError as exc:
-                    raise INDmoneyError("INDmoney se galat response aaya.") from exc
+            return payload
 
-                if isinstance(payload, dict) and payload.get("success") is False:
-                    message = payload.get("message") or payload.get("error") or ""
-                    raise INDmoneyError(str(message) or "INDmoney ne request reject ki.")
+        except requests.RequestException as exc:
+            last_error = exc
+            time.sleep(0.5 * (attempt + 1))
 
-                return payload
-
-            except requests.RequestException as exc:
-                last_error = exc
-                time.sleep(0.5 * (attempt + 1))
-
-        raise INDmoneyError("INDmoney se data nahi aaya. Internet check karo.") from last_error
+    raise INDmoneyError("INDmoney se data nahi aaya. Internet check karo.") from last_error
 
     @staticmethod
     def _norm_code(code: Any) -> str:
