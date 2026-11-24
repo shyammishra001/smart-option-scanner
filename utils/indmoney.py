@@ -16,10 +16,10 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 class INDmoneyError(Exception):
     """User-friendly INDmoney API error."""
+    pass
 
 
 def normalize_symbol(value: Any) -> str:
-    """Space, dot, hyphen hata kar symbol ko matchable banata hai."""
     if value is None:
         return ""
     text = str(value).upper().strip()
@@ -41,14 +41,6 @@ def _to_int(value: Any) -> int:
 
 
 class INDmoneyClient:
-    """
-    INDmoney / INDstocks REST client.
-
-    Auth: Authorization: <access_token>
-    Base URL: https://api.indstocks.com
-    Data APIs: 5 requests/sec — isliye internal throttle 0.22 sec.
-    """
-
     def __init__(self, token: str, api_key: str = "", timeout: int = 25):
         self.token = str(token or "").strip()
         self.api_key = str(api_key or "").strip()
@@ -57,9 +49,6 @@ class INDmoneyClient:
         self._lock = threading.Lock()
         self._last_request = 0.0
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
     def _throttle(self) -> None:
         with self._lock:
             now = time.monotonic()
@@ -69,111 +58,101 @@ class INDmoneyClient:
             self._last_request = time.monotonic()
 
     def _headers(self) -> Dict[str, str]:
-    token = self.token.strip()
-    # Double-Bearer bug fix: agar user ne "Bearer xyz" paste kiya to strip
-    token = re.sub(r"^[Bb][Ee][Aa][Rr][Ee][Rr]\s+", "", token).strip()
-    if self._bearer:
-        token = f"Bearer {token}"
-    headers = {"Accept": "application/json", "Authorization": token}
-    if self.api_key:
-        headers["X-API-KEY"] = self.api_key
-    return headers
+        token = self.token.strip()
+        # Double-Bearer bug fix
+        token = re.sub(r"^[Bb][Ee][Aa][Rr][Ee][Rr]\s+", "", token).strip()
+        if self._bearer:
+            token = f"Bearer {token}"
+        headers = {"Accept": "application/json", "Authorization": token}
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+        return headers
 
     def _get(self, path: str, params: Optional[Dict[str, Any]] = None,
-         raw: bool = False, retries: int = 3) -> Any:
-    last_error: Optional[Exception] = None
+             raw: bool = False, retries: int = 3) -> Any:
+        last_error: Optional[Exception] = None
 
-    for attempt in range(retries):
-        self._throttle()
-        try:
-            response = requests.get(
-                f"{BASE_URL}{path}", params=params,
-                headers=self._headers(), timeout=self.timeout,
-            )
-
-            if response.status_code == 429:
-                time.sleep(1.0 + attempt)
-                continue
-
-            # Asli API message nikalo
-            api_msg = ""
+        for attempt in range(retries):
+            self._throttle()
             try:
-                err_payload = response.json()
-                api_msg = (
-                    err_payload.get("message")
-                    or err_payload.get("error")
-                    or err_payload.get("error_description")
-                    or ""
+                response = requests.get(
+                    f"{BASE_URL}{path}", params=params,
+                    headers=self._headers(), timeout=self.timeout,
                 )
-            except Exception:
-                api_msg = (response.text or "")[:300]
 
-            if response.status_code in (401, 403):
-                if not self._bearer:
-                    self._bearer = True
+                if response.status_code == 429:
+                    time.sleep(1.0 + attempt)
                     continue
-                raise INDmoneyError(
-                    f"Token galat ya expire (HTTP {response.status_code})"
-                    + (f": {api_msg}" if api_msg else "")
-                )
 
-            if response.status_code >= 400:
-                raise INDmoneyError(
-                    f"INDmoney request fail (HTTP {response.status_code})"
-                    + (f": {api_msg}" if api_msg else "")
-                )
+                api_msg = ""
+                try:
+                    err_payload = response.json()
+                    api_msg = (
+                        err_payload.get("message")
+                        or err_payload.get("error")
+                        or err_payload.get("error_description")
+                        or ""
+                    )
+                except Exception:
+                    api_msg = (response.text or "")[:300]
 
-            if raw:
-                return response.text
+                if response.status_code in (401, 403):
+                    if not self._bearer:
+                        self._bearer = True
+                        continue
+                    raise INDmoneyError(
+                        f"Token galat ya expire (HTTP {response.status_code})"
+                        + (f": {api_msg}" if api_msg else "")
+                    )
 
-            try:
-                payload = response.json()
-            except ValueError as exc:
-                raise INDmoneyError("INDmoney se galat response aaya.") from exc
+                if response.status_code >= 400:
+                    raise INDmoneyError(
+                        f"INDmoney request fail (HTTP {response.status_code})"
+                        + (f": {api_msg}" if api_msg else "")
+                    )
 
-            if isinstance(payload, dict) and payload.get("success") is False:
-                message = payload.get("message") or payload.get("error") or ""
-                raise INDmoneyError(str(message) or "INDmoney ne request reject ki.")
+                if raw:
+                    return response.text
 
-            return payload
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise INDmoneyError("INDmoney se galat response aaya.") from exc
 
-        except requests.RequestException as exc:
-            last_error = exc
-            time.sleep(0.5 * (attempt + 1))
+                if isinstance(payload, dict) and payload.get("success") is False:
+                    message = payload.get("message") or payload.get("error") or ""
+                    raise INDmoneyError(str(message) or "INDmoney ne request reject ki.")
 
-    raise INDmoneyError("INDmoney se data nahi aaya. Internet check karo.") from last_error
+                return payload
+
+            except requests.RequestException as exc:
+                last_error = exc
+                time.sleep(0.5 * (attempt + 1))
+
+        raise INDmoneyError("INDmoney se data nahi aaya. Internet check karo.") from last_error
 
     @staticmethod
     def _norm_code(code: Any) -> str:
         return str(code).upper().replace(":", "_").strip()
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
     def test_token(self) -> Dict[str, Any]:
-        """Token valid hai ya nahi — /user/profile se check."""
         payload = self._get("/user/profile")
         if isinstance(payload, dict):
             return payload.get("data", payload)
         return {}
 
     def fetch_instruments(self, source: str) -> pd.DataFrame:
-        """source = equity / fno / index — CSV download."""
         text = self._get("/market/instruments", params={"source": source}, raw=True)
-
         if not text or text.lstrip().startswith("<"):
             raise INDmoneyError("Instruments CSV nahi mili.")
-
         try:
             df = pd.read_csv(io.StringIO(text), dtype=str, low_memory=False)
         except Exception as exc:
             raise INDmoneyError("Instruments CSV padhne me dikkat aayi.") from exc
-
         df.columns = [str(c).strip().upper().replace("\ufeff", "") for c in df.columns]
         return df
 
     def get_full_quotes(self, scrip_codes: List[str]) -> Dict[str, Dict[str, Any]]:
-        """Live full quotes — max 1000 instruments ek request me."""
         codes = [self._norm_code(c) for c in scrip_codes if str(c).strip()]
         codes = list(dict.fromkeys(codes))
         result: Dict[str, Dict[str, Any]] = {}
@@ -184,11 +163,9 @@ class INDmoneyClient:
                 params={"scrip-codes": ",".join(batch)},
             )
             data = payload.get("data", payload) if isinstance(payload, dict) else payload
-
             if isinstance(data, dict):
                 for key, value in data.items():
                     result[self._norm_code(key)] = value
-
             elif isinstance(data, list):
                 for item in data:
                     if not isinstance(item, dict):
@@ -200,20 +177,10 @@ class INDmoneyClient:
                     )
                     if key:
                         result[self._norm_code(key)] = item
-
         return result
 
-    def get_historical(
-        self,
-        scrip_codes: List[str],
-        interval: str,
-        start_ms: int,
-        end_ms: int,
-    ) -> Dict[str, pd.DataFrame]:
-        """
-        Historical candles — ek request me max 5 scrip.
-        interval: 1day / 5minute / 15minute etc.
-        """
+    def get_historical(self, scrip_codes: List[str], interval: str,
+                       start_ms: int, end_ms: int) -> Dict[str, pd.DataFrame]:
         codes = [self._norm_code(c) for c in scrip_codes if str(c).strip()]
         if not codes:
             return {}
@@ -238,38 +205,27 @@ class INDmoneyClient:
                 df = self._candles_to_df(candles)
                 if not df.empty:
                     result[self._norm_code(key)] = df
-
         return result
 
     @staticmethod
     def _candles_to_df(candles: Any) -> pd.DataFrame:
         if not candles:
             return pd.DataFrame()
-
         df = pd.DataFrame(candles)
         df.columns = [str(c).lower().strip() for c in df.columns]
-
         rename = {
-            "timestamp": "ts",
-            "open": "o",
-            "high": "h",
-            "low": "l",
-            "close": "c",
-            "volume": "v",
+            "timestamp": "ts", "open": "o", "high": "h",
+            "low": "l", "close": "c", "volume": "v",
         }
         df = df.rename(columns=rename)
-
         for col in ("ts", "o", "h", "l", "c", "v"):
             if col not in df.columns:
                 return pd.DataFrame()
-
         for col in ("o", "h", "l", "c", "v"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-
         ts = pd.to_numeric(df["ts"], errors="coerce")
         if ts.dropna().empty:
             return pd.DataFrame()
-
         unit = "ms" if ts.max() > 1e12 else "s"
         df["ts"] = pd.to_datetime(ts, unit=unit, utc=True).dt.tz_convert("Asia/Kolkata")
         df = (
@@ -281,12 +237,10 @@ class INDmoneyClient:
         return df[["ts", "o", "h", "l", "c", "v"]]
 
     def get_expiries(self, underlying: str) -> List[str]:
-        """Nearest se latest tak expiry dates, ascending."""
         payload = self._get(
             "/market/instruments/expiries",
             params={"underlying": str(underlying).upper(), "segment": "DERIVATIVE"},
         )
-
         data = payload.get("data", []) if isinstance(payload, dict) else payload
         if isinstance(data, dict):
             data = data.get("expiries", [])
@@ -299,19 +253,9 @@ class INDmoneyClient:
                 value = item.get("expiry") or item.get("date")
                 if value:
                     dates.append(str(value)[:10])
-
         return sorted(set(dates))
 
-    def get_option_chain(
-        self,
-        underlying_scrip: Any,
-        expiry: str,
-        strike_count: int = 10,
-    ) -> Dict[str, Any]:
-        """
-        Option chain — underlying-scrip me sirf SECURITY_ID (equity row).
-        expiry YYYY-MM-DD.
-        """
+    def get_option_chain(self, underlying_scrip: Any, expiry: str, strike_count: int = 10) -> Dict[str, Any]:
         payload = self._get(
             "/market/option-chain",
             params={
@@ -322,14 +266,11 @@ class INDmoneyClient:
                 "strike_count": int(strike_count),
             },
         )
-
         data = payload.get("data", payload) if isinstance(payload, dict) else payload
         if not isinstance(data, dict):
             raise INDmoneyError("Option chain ka response samajh nahi aaya.")
 
         strikes = data.get("strikes") or {}
-
-        # Kabhi kabhi API list bhejta hai — usko dict me convert karo.
         if isinstance(strikes, list):
             converted: Dict[str, Any] = {}
             for item in strikes:
@@ -350,10 +291,6 @@ class INDmoneyClient:
             "strikes": strikes,
         }
 
-
-# ----------------------------------------------------------------------
-# Master CSV helpers
-# ----------------------------------------------------------------------
 def _clean_df(df: Optional[pd.DataFrame]) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
@@ -361,11 +298,9 @@ def _clean_df(df: Optional[pd.DataFrame]) -> pd.DataFrame:
     out.columns = [str(c).strip().upper().replace("\ufeff", "") for c in out.columns]
     return out
 
-
 def _lot_maps(fno: pd.DataFrame) -> Tuple[Dict[str, int], Dict[str, int]]:
     lot_by_id: Dict[str, int] = {}
     lot_by_symbol: Dict[str, int] = {}
-
     if fno is None or fno.empty:
         return lot_by_id, lot_by_symbol
 
@@ -387,12 +322,8 @@ def _lot_maps(fno: pd.DataFrame) -> Tuple[Dict[str, int], Dict[str, int]]:
 
     return lot_by_id, lot_by_symbol
 
-
 def _build_search_df(equity: pd.DataFrame) -> pd.DataFrame:
-    columns = [
-        "symbol", "name", "security_id", "scrip_code",
-        "series", "aliases", "normalized", "aliases_text",
-    ]
+    columns = ["symbol", "name", "security_id", "scrip_code", "series", "aliases", "normalized", "aliases_text"]
     if equity is None or equity.empty:
         return pd.DataFrame(columns=columns)
 
@@ -442,7 +373,6 @@ def _build_search_df(equity: pd.DataFrame) -> pd.DataFrame:
 
     return pd.DataFrame(rows, columns=columns)
 
-
 def build_master(equity_df: pd.DataFrame, fno_df: pd.DataFrame,
                  index_df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
     equity = _clean_df(equity_df)
@@ -467,7 +397,6 @@ def build_master(equity_df: pd.DataFrame, fno_df: pd.DataFrame,
         "alias_map": alias_map,
     }
 
-
 def resolve_universe(master: Dict[str, Any], symbols: List[str]) -> List[Dict[str, Any]]:
     alias_map = master.get("alias_map", {})
     result = []
@@ -481,7 +410,6 @@ def resolve_universe(master: Dict[str, Any], symbols: List[str]) -> List[Dict[st
             seen.add(record["security_id"])
 
     return result
-
 
 def search_stocks(master: Dict[str, Any], query: str, limit: int = 20) -> pd.DataFrame:
     df = master.get("search_df")
