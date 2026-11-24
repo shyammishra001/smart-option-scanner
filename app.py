@@ -199,18 +199,21 @@ def render_login() -> None:
                 st.error(f"Market data load fail: {exc}")
                 return
                 
-            # API Token se User ka Naam nikalna
+            # API Token se User ka Naam nikalna (Fallback logic improved)
             user_name = "INDmoney User"
             try:
                 profile = client.test_token()
-                # Alag alag API responses ke hisaab se name check karega
-                user_name = (
-                    profile.get("name") 
-                    or profile.get("display_name") 
-                    or profile.get("client_id") 
-                    or profile.get("user_name") 
-                    or "INDmoney User"
-                )
+                if isinstance(profile, dict):
+                    # Check all possible keys for name
+                    name_val = (
+                        profile.get("name") 
+                        or profile.get("full_name")
+                        or profile.get("display_name") 
+                        or profile.get("user_name") 
+                        or profile.get("client_id") 
+                    )
+                    if name_val:
+                        user_name = str(name_val)
             except Exception:
                 pass
 
