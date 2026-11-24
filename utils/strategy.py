@@ -538,7 +538,7 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
         if delta <= 0: delta = 0.5  # fallback
 
         # 🔴 DELTA FILTER: 0.30 se kam delta (deep OTM) allowed nahi hai
-        if delta < 0.0:
+        if delta < 0.20:
             fail_reasons.append(f"Strike {strike:g} Delta ({delta:.2f}) < 0.30")
             continue
 
