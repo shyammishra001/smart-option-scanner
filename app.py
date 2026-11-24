@@ -315,7 +315,7 @@ def render_results() -> None:
         if st.button("📤 Send Top 5 to Telegram again"):
             tg_token = st.session_state.get("tg_token", "").strip()
             tg_chat = st.session_state.get("tg_chat", "").strip()
-            user_name = st.session_state.get("user_name", "INDmoney User")
+            user_name = st.session_state.get("user_id", "INDmoney User")
             
             if not tg_token or not tg_chat:
                 st.error("Pehle Streamlit Secrets me Telegram Token aur Chat ID set karo!")
