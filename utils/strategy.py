@@ -498,11 +498,17 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
     side = "ce" if direction == "BULL" else "pe"
     option_type = "CE" if direction == "BULL" else "PE"
 
-    candidates = [atm]
-    if direction == "BULL" and atm_index + 1 < len(strike_prices): candidates.append(strike_prices[atm_index + 1])
-    if direction == "BEAR" and atm_index - 1 >= 0: candidates.append(strike_prices[atm_index - 1])
+    # ITM, ATM aur OTM sabhi options check karega (3 ITM to 5 OTM)
+    if direction == "BULL":
+        start_idx = max(0, atm_index - 3)
+        end_idx = min(len(strike_prices), atm_index + 6)
+    else:
+        start_idx = max(0, atm_index - 5)
+        end_idx = min(len(strike_prices), atm_index + 4)
 
-    max_total = capital * 0.9
+    candidates = strike_prices[start_idx:end_idx]
+
+    fail_reasons = []
 
     for strike in candidates:
         leg = _get_leg(strikes, strike, side)
@@ -514,13 +520,17 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
             ask = _f(leg.get("top_ask_price"), 0)
             if bid > 0 and ask > 0: premium = (bid + ask) / 2
 
-        if premium <= 0 or not (10 <= premium <= 80): continue
+        if premium <= 0: continue
 
         lot = _lot_for_leg(leg, lot_by_id, lot_by_symbol)
         if not lot: continue
 
         total_cost = premium * lot
-        if total_cost > max_total: continue
+        
+        # Capital Check: Total Cost <= User Capital
+        if total_cost > capital: 
+            fail_reasons.append(f"Strike {strike:g} Cost ₹{total_cost:,.0f} > Capital ₹{capital:,.0f}")
+            continue
 
         premium_sl = premium * 0.65
         greeks = leg.get("greeks") or {}
@@ -538,7 +548,10 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
         if risk < 0.5: continue
 
         max_loss = risk * lot
-        if max_loss > 1500: continue
+        # Max Loss Check
+        if max_loss > 1500: 
+            fail_reasons.append(f"Strike {strike:g} Max Loss ₹{max_loss:,.0f} > 1500 limit")
+            continue
 
         target1 = round(premium + 1.5 * risk, 2)
         target2 = round(premium + 2.5 * risk, 2)
@@ -556,7 +569,9 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
             "delta": round(float(delta), 3), "expiry": chain.get("expiry", ""),
         }, None
 
-    return None, f"{int(capital)} Capital me fit nahi"
+    if fail_reasons:
+        return None, fail_reasons[0]
+    return None, f"Koi strike ₹{int(capital)} Capital me fit nahi hua"
 
 
 def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
@@ -580,7 +595,6 @@ def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
                 except INDmoneyError: continue
 
         for code in batch:
-            # FIX: DataFrame truth value ambiguity error fixed here
             df = data.get(code)
             if df is None or df.empty:
                 df = data.get(code.replace("NSE_", ""))
@@ -700,9 +714,9 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
 
             if not trade:
                 if scored_ref:
-                    scored_ref["score"] = final_score; scored_ref["status"] = f"❌ {int(capital)} me fit nahi"
-                    scored_ref["reason"] = reason or f"{int(capital)} Capital me fit nahi"
-                skipped.append({"stock": row["symbol"], "reason": reason or f"{int(capital)} Capital me fit nahi"})
+                    scored_ref["score"] = final_score; scored_ref["status"] = "❌ Option Chain Fail"
+                    scored_ref["reason"] = reason or "Capital / Premium fit nahi hua"
+                skipped.append({"stock": row["symbol"], "reason": reason or "Capital fit nahi"})
                 continue
 
             if final_score < 70:
