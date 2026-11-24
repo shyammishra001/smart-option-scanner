@@ -498,7 +498,6 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
     side = "ce" if direction == "BULL" else "pe"
     option_type = "CE" if direction == "BULL" else "PE"
 
-    # ITM, ATM aur OTM sabhi options check karega (3 ITM to 5 OTM)
     if direction == "BULL":
         start_idx = max(0, atm_index - 3)
         end_idx = min(len(strike_prices), atm_index + 6)
@@ -507,8 +506,10 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
         end_idx = min(len(strike_prices), atm_index + 4)
 
     candidates = strike_prices[start_idx:end_idx]
-
     fail_reasons = []
+    
+    # 🔴 MAX LOSS FIX: 30% of Capital
+    max_allowed_loss = capital * 0.30
 
     for strike in candidates:
         leg = _get_leg(strikes, strike, side)
@@ -526,10 +527,8 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
         if not lot: continue
 
         total_cost = premium * lot
-        
-        # Capital Check: Total Cost <= User Capital
         if total_cost > capital: 
-            fail_reasons.append(f"Strike {strike:g} Cost ₹{total_cost:,.0f} > Capital ₹{capital:,.0f}")
+            fail_reasons.append(f"Strike {strike:g} Cost ₹{total_cost:,.0f} > Capital")
             continue
 
         premium_sl = premium * 0.65
@@ -548,9 +547,9 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
         if risk < 0.5: continue
 
         max_loss = risk * lot
-        # Max Loss Check
-        if max_loss > 1500: 
-            fail_reasons.append(f"Strike {strike:g} Max Loss ₹{max_loss:,.0f} > 1500 limit")
+        # Max loss ab capital ka 30% hoga
+        if max_loss > max_allowed_loss: 
+            fail_reasons.append(f"Strike {strike:g} Max Loss ₹{max_loss:,.0f} > 30% Capital")
             continue
 
         target1 = round(premium + 1.5 * risk, 2)
@@ -571,7 +570,7 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
 
     if fail_reasons:
         return None, fail_reasons[0]
-    return None, f"Koi strike ₹{int(capital)} Capital me fit nahi hua"
+    return None, f"Koi strike fit nahi hua"
 
 
 def _fetch_histories(client: INDmoneyClient, codes: List[str], interval: str,
