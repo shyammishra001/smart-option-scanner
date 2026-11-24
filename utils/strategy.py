@@ -498,17 +498,19 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
     side = "ce" if direction == "BULL" else "pe"
     option_type = "CE" if direction == "BULL" else "PE"
 
-    if direction == "BULL":
-        start_idx = max(0, atm_index - 3)
-        end_idx = min(len(strike_prices), atm_index + 6)
-    else:
-        start_idx = max(0, atm_index - 5)
-        end_idx = min(len(strike_prices), atm_index + 4)
+    # ATM ke aas paas ke 4 ITM aur 4 OTM check karega
+    candidates = []
+    for i in range(-4, 5):
+        idx = atm_index + i
+        if 0 <= idx < len(strike_prices):
+            candidates.append(strike_prices[idx])
 
-    candidates = strike_prices[start_idx:end_idx]
+    # ATM sabse pehle check hoga (Distance based sorting)
+    candidates.sort(key=lambda x: abs(x - spot))
+    
     fail_reasons = []
     
-    # 🔴 MAX LOSS FIX: 30% of Capital
+    # MAX LOSS FIX: Capital ka 30%
     max_allowed_loss = capital * 0.30
 
     for strike in candidates:
@@ -531,11 +533,16 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
             fail_reasons.append(f"Strike {strike:g} Cost ₹{total_cost:,.0f} > Capital")
             continue
 
-        premium_sl = premium * 0.65
         greeks = leg.get("greeks") or {}
         delta = abs(_f(greeks.get("delta"), 0))
-        if delta <= 0: delta = 0.5
+        if delta <= 0: delta = 0.5  # fallback
 
+        # 🔴 DELTA FILTER: 0.30 se kam delta (deep OTM) allowed nahi hai
+        if delta < 0.30:
+            fail_reasons.append(f"Strike {strike:g} Delta ({delta:.2f}) < 0.30")
+            continue
+
+        premium_sl = premium * 0.65
         atr_value = _f(atr, 0)
         atr_sl = premium - (delta * atr_value) if atr_value > 0 else 0
 
@@ -547,7 +554,6 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
         if risk < 0.5: continue
 
         max_loss = risk * lot
-        # Max loss ab capital ka 30% hoga
         if max_loss > max_allowed_loss: 
             fail_reasons.append(f"Strike {strike:g} Max Loss ₹{max_loss:,.0f} > 30% Capital")
             continue
