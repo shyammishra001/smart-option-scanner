@@ -368,6 +368,11 @@ def _tech_score(daily: Optional[pd.DataFrame], intraday: Optional[pd.DataFrame],
     if atr_value <= 0:
         atr_value = price * 0.015
 
+    # SWING HIGH / LOW CALCULATION (Last 20 intraday candles)
+    lookback_df = today if len(today) >= 20 else i5.tail(20)
+    swing_high = float(lookback_df["h"].max())
+    swing_low = float(lookback_df["l"].min())
+
     return {
         "direction": direction,
         "tech_score": float(tech_score),
@@ -383,6 +388,8 @@ def _tech_score(daily: Optional[pd.DataFrame], intraday: Optional[pd.DataFrame],
         "day_change_pct": float(day_change_pct),
         "rsi": float(rsi_value),
         "atr": float(atr_value),
+        "swing_high": swing_high,
+        "swing_low": swing_low,
         "ema20": float(e20),
         "ema50": float(e50),
         "ema200": float(e200),
@@ -482,7 +489,8 @@ def _option_score(chain: Dict[str, Any], direction: str, day_change_pct: float, 
 
 
 def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol: Dict[str, int],
-                direction: str, capital: float, atr: float, spot_fallback: float = 0.0) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+                direction: str, capital: float, atr: float, spot_fallback: float,
+                swing_high: float, swing_low: float) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     strikes = chain.get("strikes") or {}
     if not strikes: return None, "Option chain khali hai"
 
@@ -498,19 +506,44 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
     side = "ce" if direction == "BULL" else "pe"
     option_type = "CE" if direction == "BULL" else "PE"
 
-    # ATM se shuru karke aas-paas ke strikes check karega
     candidates = []
     for i in range(-4, 5):
         idx = atm_index + i
         if 0 <= idx < len(strike_prices):
             candidates.append(strike_prices[idx])
-
-    # ATM sabse pehle check hoga (Distance based sorting)
     candidates.sort(key=lambda x: abs(x - spot))
     
     fail_reasons = []
-    
     max_allowed_loss = capital * 0.30
+
+    # 🔴 STRUCTURAL SL / TP CALCULATION (Underlying Level)
+    if direction == "BULL":
+        # SL below swing low, but not too far. If swing low is above spot (weird), use ATR.
+        structural_sl_spot = swing_low * 0.999
+        if structural_sl_spot >= spot:
+            structural_sl_spot = spot - (atr * 0.8 if atr > 0 else spot * 0.005)
+        
+        # Targets based on 1:1.5 and 1:2.5 of underlying risk, AND swing high
+        underlying_risk_spot = spot - structural_sl_spot
+        structural_tp1_spot = spot + (underlying_risk_spot * 1.5)
+        structural_tp2_spot = spot + (underlying_risk_spot * 2.5)
+        
+        # Agar swing high paas hai, to usko T1 bana do
+        if swing_high > spot:
+            structural_tp1_spot = max(structural_tp1_spot, swing_high)
+            structural_tp2_spot = max(structural_tp2_spot, swing_high + (swing_high - structural_sl_spot) * 0.5)
+    else:
+        structural_sl_spot = swing_high * 1.001
+        if structural_sl_spot <= spot:
+            structural_sl_spot = spot + (atr * 0.8 if atr > 0 else spot * 0.005)
+            
+        underlying_risk_spot = structural_sl_spot - spot
+        structural_tp1_spot = spot - (underlying_risk_spot * 1.5)
+        structural_tp2_spot = spot - (underlying_risk_spot * 2.5)
+        
+        if swing_low < spot and swing_low > 0:
+            structural_tp1_spot = min(structural_tp1_spot, swing_low)
+            structural_tp2_spot = min(structural_tp2_spot, swing_low - (structural_sl_spot - swing_low) * 0.5)
 
     for strike in candidates:
         leg = _get_leg(strikes, strike, side)
@@ -536,19 +569,18 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
         delta = abs(_f(greeks.get("delta"), 0))
         if delta <= 0: delta = 0.5
 
-        # Delta Filter: 0.30 se kam delta (deep OTM) reject karega
-        if delta < 0.30:
-            fail_reasons.append(f"Strike {strike:g} Delta ({delta:.2f}) < 0.30")
-            continue
+        # Option SL from Underlying Structural SL
+        option_sl_from_struct = premium - (delta * abs(spot - structural_sl_spot))
+        
+        # Hard Stop: Max 35% loss on Premium (Safety net)
+        hard_stop = premium * 0.65
+        option_sl = max(option_sl_from_struct, hard_stop)
+        
+        # Min Stop: At least 10% loss on Premium (Don't get stopped out on noise)
+        min_stop = premium * 0.90
+        option_sl = min(option_sl, min_stop)
 
-        premium_sl = premium * 0.65
-        atr_value = _f(atr, 0)
-        atr_sl = premium - (delta * atr_value) if atr_value > 0 else 0
-
-        stop_loss = max(premium_sl, atr_sl)
-        if stop_loss <= 0 or stop_loss >= premium * 0.98: stop_loss = premium_sl
-
-        stop_loss = round(max(stop_loss, 0.05), 2)
+        stop_loss = round(max(option_sl, 0.05), 2)
         risk = premium - stop_loss
         if risk < 0.5: continue
 
@@ -557,8 +589,13 @@ def _pick_trade(chain: Dict[str, Any], lot_by_id: Dict[str, int], lot_by_symbol:
             fail_reasons.append(f"Strike {strike:g} Max Loss ₹{max_loss:,.0f} > 30% Capital")
             continue
 
-        target1 = round(premium + 1.5 * risk, 2)
-        target2 = round(premium + 2.5 * risk, 2)
+        # Option TP from Underlying Structural TP
+        option_tp1 = premium + (delta * abs(structural_tp1_spot - spot))
+        option_tp2 = premium + (delta * abs(structural_tp2_spot - spot))
+        
+        # Ensure minimum R:R
+        target1 = round(max(option_tp1, premium + 1.5 * risk), 2)
+        target2 = round(max(option_tp2, premium + 2.5 * risk), 2)
 
         reward_risk = (target2 - premium) / risk if risk > 0 else 0
         if reward_risk < 2.0: continue
@@ -656,12 +693,14 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
             "stock_name": stock["symbol"], "stock_full_name": stock["name"],
             "stock_code": code, "security_id": stock["security_id"],
             "breakdown": {"trend": 0, "vcp": 0, "orb": 0, "vwap": 0, "oi": 0},
+            "direction": "NEUTRAL",
         }
 
         if scored is None:
             all_scored.append({**base, "score": 0, "status": "❌ Data nahi", "reason": "Candles nahi mile"})
             continue
 
+        base["direction"] = scored.get("direction", "NEUTRAL")
         bd = dict(scored.get("breakdown") or base["breakdown"])
 
         if scored["direction"] == "NEUTRAL":
@@ -711,7 +750,13 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
             chain = client.get_option_chain(row["security_id"], expiry)
 
             option_score, option_tags, option_meta = _option_score(chain, row["direction"], row["day_change_pct"], row["price"])
-            trade, reason = _pick_trade(chain, master["lot_by_id"], master["lot_by_symbol"], row["direction"], capital, row["atr"], row["price"])
+            
+            # Pass swing_high and swing_low to _pick_trade
+            trade, reason = _pick_trade(
+                chain, master["lot_by_id"], master["lot_by_symbol"], 
+                row["direction"], capital, row["atr"], row["price"],
+                row["swing_high"], row["swing_low"]
+            )
 
             if scored_ref: scored_ref["breakdown"]["oi"] = int(option_score)
             final_score = int(round(row["tech_score"] + option_score))
@@ -768,6 +813,7 @@ def run_scan(client: INDmoneyClient, master: Dict[str, Any], capital: float = 50
 
     for r in all_scored: r.pop("_code", None)
 
+    all_scored.sort(key=lambda x: x.get("score", 0), reverse=True)
     results.sort(key=lambda x: x["score"], reverse=True)
     top_results = results[:5]
 
