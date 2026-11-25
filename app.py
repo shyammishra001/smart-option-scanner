@@ -199,7 +199,6 @@ def render_login() -> None:
                 st.error(f"Market data load fail: {exc}")
                 return
                 
-            # API Token se User ka Naam nikalna (first_name + last_name)
             user_name = "INDmoney User"
             try:
                 profile_data = client.test_token()
@@ -359,18 +358,53 @@ def render_results() -> None:
         )
 
     st.divider()
-    st.subheader("📊 Sabhi Scored Stocks — Qualified + Rejected")
+    st.subheader("📊 Sabhi Scored Stocks — Qualified + Rejected (Signal Wise Color)")
 
     if all_scored:
         scan_rows = []
         for r in all_scored:
+            direction = r.get("direction", "NEUTRAL")
+            sig_text = "Bullish (CE)" if direction == "BULL" else ("Bearish (PE)" if direction == "BEAR" else "Neutral")
+            
             scan_rows.append({
                 "Stock": r.get("stock_name", ""),
+                "Signal": sig_text,
                 "Score": r.get("score", 0),
                 "Status": r.get("status", ""),
                 "Reject Reason (Agar koi ho)": r.get("reason", ""),
             })
-        st.dataframe(pd.DataFrame(scan_rows), use_container_width=True, hide_index=True)
+        
+        df_scored = pd.DataFrame(scan_rows)
+        
+        # 🔴 HEATMAP LOGIC: BULL = Green, BEAR = Red, Score intensity = Alpha
+        def style_row(row):
+            score = row['Score']
+            signal = row.get('Signal', 'Neutral')
+            
+            styles = [''] * len(row)
+            
+            # Agar score 0 se jyada hai aur Bullish ya Bearish hai
+            if score > 0 and ('Bullish' in signal or 'Bearish' in signal):
+                # Alpha (transparency) set karo score ke hisaab se (max 0.85 taaki text padha ja sake)
+                alpha = min(max(score / 100.0, 0.1), 0.85) 
+                
+                if 'Bullish' in signal:
+                    bg = f'rgba(0, 150, 0, {alpha})' # Green
+                else:
+                    bg = f'rgba(200, 0, 0, {alpha})' # Red
+                    
+                text_color = 'white' if alpha > 0.4 else 'black'
+                style_str = f'background-color: {bg}; color: {text_color}; font-weight: bold;'
+                
+                # Sirf 'Stock', 'Signal' aur 'Score' column me color lagao
+                for i, col in enumerate(row.index):
+                    if col in ['Stock', 'Signal', 'Score']:
+                        styles[i] = style_str
+                        
+            return styles
+
+        styled_df = df_scored.style.apply(style_row, axis=1)
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 def render_search(master: Dict[str, Any]) -> None:
     st.divider()
